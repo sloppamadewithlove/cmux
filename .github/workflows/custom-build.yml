@@ -1,15 +1,20 @@
 name: Custom Build
 
-# Manual workflow that builds the cmux Debug .app on a GitHub-hosted macOS runner
-# and uploads it as an artifact. Designed to work on a fork without any self-hosted
-# infrastructure. Trigger from the Actions tab or via:
-#   gh workflow run custom-build.yml --ref <branch>
+# Builds a Release-configuration cmux.app with the custom visual layer on top
+# of upstream manaflow-ai/cmux. Output bundle ID is com.cmuxterm.app (same as
+# the real Cmux) so the artifact can replace /Applications/Cmux.app directly.
+# Sparkle auto-update is disabled in the built bundle to prevent upstream's
+# appcast from silently clobbering the custom build.
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches:
       - custom-visuals
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,6 +26,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Select Xcode
         run: |
@@ -45,10 +51,10 @@ jobs:
       - name: Resolve Swift packages
         run: |
           set -euo pipefail
-          xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug \
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Release \
             -resolvePackageDependencies
 
-      - name: Build cmux (Debug)
+      - name: Build cmux (Release)
         env:
           CMUX_SKIP_ZIG_BUILD: "1"
         run: |
@@ -56,22 +62,25 @@ jobs:
           xcodebuild \
             -project GhosttyTabs.xcodeproj \
             -scheme cmux \
-            -configuration Debug \
+            -configuration Release \
             -destination 'platform=macOS' \
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            SPARKLE_PUBLIC_KEY="" \
             build
 
       - name: Locate built app
         id: locate
         run: |
           set -euo pipefail
-          APP_PATH="$(find build/Build/Products/Debug -maxdepth 2 -name '*.app' -type d | head -n 1)"
+          APP_PATH="$(find build/Build/Products/Release -maxdepth 2 -name '*.app' -type d | head -n 1)"
           if [ -z "$APP_PATH" ]; then
             echo "No .app produced" >&2
-            ls -R build/Build/Products/Debug || true
+            ls -R build/Build/Products/Release || true
             exit 1
           fi
           APP_NAME="$(basename "$APP_PATH" .app)"
@@ -79,25 +88,96 @@ jobs:
           echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Zip app for download
+      - name: Disable Sparkle auto-update in built bundle
         env:
           APP_PATH: ${{ steps.locate.outputs.app_path }}
-          APP_NAME: ${{ steps.locate.outputs.app_name }}
         run: |
           set -euo pipefail
-          cd "$(dirname "$APP_PATH")"
-          zip -ry "/tmp/${APP_NAME}.zip" "$(basename "$APP_PATH")"
-          ls -lh "/tmp/${APP_NAME}.zip"
+          PLIST="$APP_PATH/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :SUFeedURL " "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CmuxCustomBuild bool true" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Set :CmuxCustomBuild true" "$PLIST"
+          echo "--- verified Sparkle settings ---"
+          /usr/libexec/PlistBuddy -c "Print :SUEnableAutomaticChecks" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :SUAutomaticallyUpdate" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST"
 
-      - name: Upload .app artifact
+      - name: Re-sign bundle ad-hoc (plist edits invalidate the signature)
         env:
-          APP_NAME: ${{ steps.locate.outputs.app_name }}
-        run: echo "ARTIFACT_PATH=/tmp/${APP_NAME}.zip" >> "$GITHUB_ENV"
+          APP_PATH: ${{ steps.locate.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          codesign --remove-signature "$APP_PATH" 2>/dev/null || true
+          codesign --force --deep --sign - "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dv "$APP_PATH" 2>&1 | sed -n '1,10p'
 
-      - name: Publish artifact
+      - name: Determine version and tag
+        id: version
+        env:
+          APP_PATH: ${{ steps.locate.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          UPSTREAM_VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          SHORT_SHA="$(git rev-parse --short HEAD)"
+          echo "upstream_version=$UPSTREAM_VER" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA"           >> "$GITHUB_OUTPUT"
+          echo "custom_tag=custom-latest"       >> "$GITHUB_OUTPUT"
+          echo "custom_title=Custom Cmux ${UPSTREAM_VER} (${SHORT_SHA})" >> "$GITHUB_OUTPUT"
+
+      - name: Package app with ditto (preserves _CodeSignature)
+        id: package
+        env:
+          APP_PATH: ${{ steps.locate.outputs.app_path }}
+        run: |
+          set -euo pipefail
+          OUT="/tmp/cmux-custom.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$OUT"
+          ls -lh "$OUT"
+          shasum -a 256 "$OUT" > "${OUT}.sha256"
+          cat "${OUT}.sha256"
+          echo "zip_path=$OUT"             >> "$GITHUB_OUTPUT"
+          echo "sha256_path=${OUT}.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Publish floating custom-latest release
+        env:
+          GH_TOKEN:     ${{ secrets.GITHUB_TOKEN }}
+          ZIP_PATH:     ${{ steps.package.outputs.zip_path }}
+          SHA_PATH:     ${{ steps.package.outputs.sha256_path }}
+          CUSTOM_TAG:   ${{ steps.version.outputs.custom_tag }}
+          CUSTOM_TITLE: ${{ steps.version.outputs.custom_title }}
+          UPSTREAM_VER: ${{ steps.version.outputs.upstream_version }}
+          SHORT_SHA:    ${{ steps.version.outputs.short_sha }}
+          COMMIT_SHA:   ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          NOTES_FILE="$(mktemp)"
+          {
+            printf 'Upstream version: %s\n' "$UPSTREAM_VER"
+            printf 'Commit: %s\n' "$SHORT_SHA"
+            printf 'Built: %s\n\n' "$BUILD_TIME"
+            printf 'Ad-hoc signed. Install via install-cmux-custom.command.\n'
+          } > "$NOTES_FILE"
+          gh release delete "$CUSTOM_TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$CUSTOM_TAG" \
+            --title "$CUSTOM_TITLE" \
+            --notes-file "$NOTES_FILE" \
+            --target "$COMMIT_SHA" \
+            --prerelease \
+            "$ZIP_PATH" "$SHA_PATH"
+          gh release view "$CUSTOM_TAG"
+
+      - name: Also publish as workflow artifact (fallback)
         uses: actions/upload-artifact@v4
         with:
-          name: cmux-custom-visuals-app
-          path: ${{ env.ARTIFACT_PATH }}
+          name: cmux-custom-${{ steps.version.outputs.short_sha }}
+          path: |
+            /tmp/cmux-custom.zip
+            /tmp/cmux-custom.zip.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
