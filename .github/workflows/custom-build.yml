@@ -73,20 +73,29 @@ jobs:
             SPARKLE_PUBLIC_KEY="" \
             build
 
-      - name: Locate built app
+      - name: Locate built app and normalize to Cmux.app
         id: locate
         run: |
           set -euo pipefail
-          APP_PATH="$(find build/Build/Products/Release -maxdepth 2 -name '*.app' -type d | head -n 1)"
-          if [ -z "$APP_PATH" ]; then
+          BUILT="$(find build/Build/Products/Release -maxdepth 2 -iname '*.app' -type d | head -n 1)"
+          if [ -z "$BUILT" ]; then
             echo "No .app produced" >&2
             ls -R build/Build/Products/Release || true
             exit 1
           fi
-          APP_NAME="$(basename "$APP_PATH" .app)"
-          echo "Found $APP_PATH"
-          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
-          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          # Release config produces cmux.app (lowercase). Rename to Cmux.app
+          # so the artifact matches the capitalization of the installed
+          # /Applications/Cmux.app that it replaces. Use a two-step rename
+          # because APFS is case-insensitive.
+          TARGET="build/Build/Products/Release/Cmux.app"
+          if [ "$BUILT" != "$TARGET" ]; then
+            TMP_DIR="$(dirname "$BUILT")/_rename_tmp"
+            mv "$BUILT" "$TMP_DIR"
+            mv "$TMP_DIR" "$TARGET"
+          fi
+          echo "Normalized app path: $TARGET"
+          echo "app_path=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "app_name=Cmux"    >> "$GITHUB_OUTPUT"
 
       - name: Disable Sparkle auto-update in built bundle
         env:

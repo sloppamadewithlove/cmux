@@ -44,18 +44,32 @@ else
   curl -fsSL -o "$TMP/$SHA_NAME" "$BASE/$SHA_NAME"
 fi
 
-# 2. Verify sha256. The sha file contains "<hash>  <filename>" as produced by
-#    `shasum -a 256`, so shasum -c handles it directly.
+# 2. Verify sha256. The sha file from CI contains an absolute path from the
+#    runner, so recompute the hash against the downloaded zip directly rather
+#    than using `shasum -c` (which would try to open the runner-side path).
 blue "==> Verifying sha256"
-(cd "$TMP" && shasum -a 256 -c "$SHA_NAME") || { red "sha256 mismatch — aborting"; exit 1; }
-green "    sha256 OK"
+EXPECTED_HASH="$(awk '{print $1}' "$TMP/$SHA_NAME")"
+ACTUAL_HASH="$(shasum -a 256 "$TMP/$ZIP_NAME" | awk '{print $1}')"
+if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+  red "sha256 mismatch"
+  red "  expected: $EXPECTED_HASH"
+  red "  actual:   $ACTUAL_HASH"
+  exit 1
+fi
+green "    sha256 OK ($ACTUAL_HASH)"
 
-# 3. Unzip into temp.
+# 3. Unzip into temp. ditto preserves the source's case (because APFS is
+#    case-insensitive), so we explicitly rename the extracted bundle to
+#    Cmux.app to match the name of the installed Cmux we're replacing.
 blue "==> Unzipping"
 ditto -xk "$TMP/$ZIP_NAME" "$TMP/unpack"
-NEW_APP="$(find "$TMP/unpack" -maxdepth 2 -name '*.app' -type d | head -n 1)"
-if [ -z "${NEW_APP:-}" ]; then
+EXTRACTED="$(find "$TMP/unpack" -maxdepth 2 -iname '*.app' -type d | head -n 1)"
+if [ -z "${EXTRACTED:-}" ]; then
   red "Could not find .app in downloaded zip"; exit 1
+fi
+NEW_APP="$TMP/unpack/Cmux.app"
+if [ "$EXTRACTED" != "$NEW_APP" ]; then
+  mv "$EXTRACTED" "$NEW_APP"
 fi
 green "    extracted: $NEW_APP"
 
