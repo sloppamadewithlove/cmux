@@ -105,13 +105,18 @@ jobs:
           PLIST="$APP_PATH/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :SUFeedURL " "$PLIST"
+          # SUFeedURL / SUPublicEDKey were stripped from source Info.plist in
+          # this fork. Delete if present; tolerate absence so PlistBuddy's
+          # "Entry Does Not Exist" does not fail the build.
+          /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" "$PLIST" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Delete :SUPublicEDKey" "$PLIST" 2>/dev/null || true
           /usr/libexec/PlistBuddy -c "Add :CmuxCustomBuild bool true" "$PLIST" 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Set :CmuxCustomBuild true" "$PLIST"
           echo "--- verified Sparkle settings ---"
           /usr/libexec/PlistBuddy -c "Print :SUEnableAutomaticChecks" "$PLIST"
           /usr/libexec/PlistBuddy -c "Print :SUAutomaticallyUpdate" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$PLIST" 2>/dev/null || echo "SUFeedURL: (not set)"
+          /usr/libexec/PlistBuddy -c "Print :SUPublicEDKey" "$PLIST" 2>/dev/null || echo "SUPublicEDKey: (not set)"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$PLIST"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST"
 
