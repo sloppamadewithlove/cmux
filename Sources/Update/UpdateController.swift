@@ -13,36 +13,21 @@ enum UpdateSettings {
     static let scheduledCheckInterval: TimeInterval = 60 * 60
 
     static func apply(to defaults: UserDefaults) {
+        // custom-visuals: Sparkle is disabled in this fork (ad-hoc signed, no
+        // EdDSA key). Force every relevant key OFF unconditionally so a stale
+        // UserDefaults value from a prior upstream install cannot re-enable the
+        // broken Sparkle auto-check path. Update polling lives in
+        // `CustomUpdateChecker`, not Sparkle.
         defaults.register(defaults: [
-            automaticChecksKey: true,
+            automaticChecksKey: false,
             automaticallyUpdateKey: false,
             scheduledCheckIntervalKey: scheduledCheckInterval,
             sendProfileInfoKey: false,
         ])
 
-        guard !defaults.bool(forKey: migrationKey) else { return }
-
-        // Repair older installs that may have ended up with automatic checks disabled
-        // before the updater defaults were embedded in Info.plist.
-        defaults.set(true, forKey: automaticChecksKey)
-
-        if let interval = defaults.object(forKey: scheduledCheckIntervalKey) as? NSNumber {
-            let currentInterval = interval.doubleValue
-            if currentInterval <= 0 ||
-                abs(currentInterval - previousDefaultScheduledCheckInterval) < 1 {
-                defaults.set(scheduledCheckInterval, forKey: scheduledCheckIntervalKey)
-            }
-        } else {
-            defaults.set(scheduledCheckInterval, forKey: scheduledCheckIntervalKey)
-        }
-
-        if defaults.object(forKey: automaticallyUpdateKey) == nil {
-            defaults.set(false, forKey: automaticallyUpdateKey)
-        }
-        if defaults.object(forKey: sendProfileInfoKey) == nil {
-            defaults.set(false, forKey: sendProfileInfoKey)
-        }
-
+        defaults.set(false, forKey: automaticChecksKey)
+        defaults.set(false, forKey: automaticallyUpdateKey)
+        defaults.set(false, forKey: sendProfileInfoKey)
         defaults.set(true, forKey: migrationKey)
     }
 }
@@ -178,66 +163,33 @@ class UpdateController {
 
     /// Check for updates (used by the menu item).
     @objc func checkForUpdates() {
-        UpdateLogStore.shared.append("checkForUpdates routed to CustomUpdateChecker (custom-visuals fork)")
-        CustomUpdateChecker.shared.checkNow()
+        routeCheckToCustomUpdater()
     }
 
     /// Check for updates using the custom popover-based UI.
     func checkForUpdatesInCustomUI() {
-        CustomUpdateChecker.shared.checkNow()
+        routeCheckToCustomUpdater()
     }
 
     private func performCheckForUpdates() {
-        startUpdaterIfNeeded()
-        ensureSparkleInstallationCache()
-        if viewModel.state == .idle {
-            updater.checkForUpdates()
-            return
-        }
-
-        installCancellable?.cancel()
-        viewModel.state.cancel()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
-            self?.updater.checkForUpdates()
-        }
+        // custom-visuals: dead path retained only for source-level compat. All
+        // real check paths go through CustomUpdateChecker; never touch Sparkle.
+        routeCheckToCustomUpdater()
     }
 
     /// Check for updates once the updater is ready (used by UI tests).
     func checkForUpdatesWhenReady(retries: Int = 10) {
-        readyCheckWorkItem?.cancel()
-        readyCheckWorkItem = nil
-        startUpdaterIfNeeded()
-        ensureSparkleInstallationCache()
-        let canCheck = updater.canCheckForUpdates
-        UpdateLogStore.shared.append("checkForUpdatesWhenReady invoked (canCheck=\(canCheck))")
-        if canCheck {
-            performCheckForUpdates()
-            return
+        // custom-visuals: the Sparkle "ready" handshake is irrelevant in this
+        // fork. Route straight to the custom GitHub-API checker.
+        _ = retries
+        routeCheckToCustomUpdater()
+    }
+
+    private func routeCheckToCustomUpdater() {
+        UpdateLogStore.shared.append("update check routed to CustomUpdateChecker (custom-visuals fork)")
+        Task { @MainActor in
+            CustomUpdateChecker.shared.checkNow()
         }
-        if viewModel.state.isIdle {
-            viewModel.state = .checking(.init(cancel: {}))
-        }
-        guard retries > 0 else {
-            UpdateLogStore.shared.append("checkForUpdatesWhenReady timed out")
-            if case .checking = viewModel.state {
-                viewModel.state = .error(.init(
-                    error: NSError(
-                        domain: "cmux.update",
-                        code: 1,
-                        userInfo: [NSLocalizedDescriptionKey: "Updater is still starting. Try again in a moment."]
-                    ),
-                    retry: { [weak self] in self?.checkForUpdates() },
-                    dismiss: { [weak self] in self?.viewModel.state = .idle }
-                ))
-            }
-            return
-        }
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.checkForUpdatesWhenReady(retries: retries - 1)
-        }
-        readyCheckWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + readyRetryDelay, execute: workItem)
     }
 
     /// Validate the check for updates menu item.
