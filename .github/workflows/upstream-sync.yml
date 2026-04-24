@@ -1,0 +1,127 @@
+name: Upstream Sync
+
+# Daily job that fetches upstream manaflow-ai/cmux, merges main into
+# custom-visuals, and re-runs custom-build.yml on the result.
+# - If the merge is clean, the custom-build workflow publishes a fresh
+#   'custom-latest' release automatically (via its push trigger).
+# - If the merge conflicts, opens/updates a GitHub issue listing the
+#   conflicted files so the user knows to ask Claude to resolve them.
+
+on:
+  schedule:
+    # Every day at 09:00 UTC (~5am ET / 2am PT). After upstream's typical
+    # release window so new releases get picked up promptly.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout custom-visuals
+        uses: actions/checkout@v4
+        with:
+          ref: custom-visuals
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "upstream-sync-bot"
+          git config user.email "upstream-sync-bot@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/manaflow-ai/cmux.git
+          git remote -v
+
+      - name: Fetch upstream
+        run: |
+          git fetch upstream main
+
+      - name: Check if already up to date
+        id: check
+        run: |
+          set -euo pipefail
+          BEHIND="$(git rev-list --count HEAD..upstream/main)"
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "custom-visuals is $BEHIND commit(s) behind upstream/main"
+
+      - name: Attempt merge
+        if: steps.check.outputs.behind != '0'
+        id: merge
+        run: |
+          set +e
+          git merge upstream/main --no-edit
+          MERGE_EXIT=$?
+          set -e
+          if [ "$MERGE_EXIT" -ne 0 ]; then
+            CONFLICTED="$(git diff --name-only --diff-filter=U | tr '\n' ' ')"
+            echo "conflicted=$CONFLICTED" >> "$GITHUB_OUTPUT"
+            echo "merge_ok=false" >> "$GITHUB_OUTPUT"
+            git merge --abort || true
+          else
+            echo "merge_ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push merged branch (clean merge)
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.merge_ok == 'true'
+        run: |
+          git push origin custom-visuals
+
+      - name: Open issue on conflict
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.merge_ok == 'false'
+        env:
+          GH_TOKEN:   ${{ secrets.GITHUB_TOKEN }}
+          CONFLICTED: ${{ steps.merge.outputs.conflicted }}
+          BEHIND:     ${{ steps.check.outputs.behind }}
+        run: |
+          set -euo pipefail
+          TITLE="Upstream sync conflict ($(date -u +%Y-%m-%d))"
+          BODY_FILE="$(mktemp)"
+          {
+            printf 'The automated upstream sync could not merge cleanly.\n\n'
+            printf '**Commits behind upstream/main:** %s\n\n' "$BEHIND"
+            printf '**Conflicted files:**\n\n'
+            printf '```\n'
+            for f in $CONFLICTED; do printf '%s\n' "$f"; done
+            printf '```\n\n'
+            printf 'To resolve, run locally:\n\n'
+            printf '```\n'
+            printf 'cd /Users/slava/Downloads/vibework/cmux\n'
+            printf 'git fetch origin && git merge origin/main\n'
+            printf '# resolve conflicts in the files above\n'
+            printf 'git commit\n'
+            printf 'git push myfork custom-visuals\n'
+            printf '```\n'
+          } > "$BODY_FILE"
+          # Close any previous open conflict issues to keep the tracker clean.
+          gh issue list --label upstream-sync-conflict --state open --json number --jq '.[].number' \
+            | while read n; do
+                gh issue close "$n" --comment "Superseded by newer sync run."
+              done
+          gh issue create \
+            --title "$TITLE" \
+            --body-file "$BODY_FILE" \
+            --label upstream-sync-conflict
+
+      - name: Summary
+        env:
+          BEHIND:     ${{ steps.check.outputs.behind }}
+          MERGE_OK:   ${{ steps.merge.outputs.merge_ok }}
+          CONFLICTED: ${{ steps.merge.outputs.conflicted }}
+        run: |
+          {
+            echo "### Upstream sync summary"
+            echo ""
+            echo "- Commits behind: ${BEHIND}"
+            echo "- Merge OK: ${MERGE_OK:-n/a}"
+            echo "- Conflicted: ${CONFLICTED:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
