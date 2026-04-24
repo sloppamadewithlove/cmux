@@ -79,17 +79,30 @@ pkill -f "Cmux.app/Contents/MacOS/cmux" 2>/dev/null || true
 sleep 0.5
 
 # 6. Replace /Applications/Cmux.app atomically via backup + move.
+#    /Applications is group-writable by admin users, so no sudo needed here.
 blue "==> Installing to $DEST"
 if [ -e "$DEST" ]; then
-  BACKUP="$DEST.backup-$(date +%s)"
-  sudo mv "$DEST" "$BACKUP"
+  BACKUP="$DEST.backup-$(date +%Y%m%d-%H%M%S)"
+  mv "$DEST" "$BACKUP"
   yellow "    previous Cmux moved to $BACKUP"
 fi
-sudo ditto "$NEW_APP" "$DEST"
-sudo xattr -cr "$DEST"
+ditto "$NEW_APP" "$DEST"
+xattr -cr "$DEST"
 green "    installed"
 
-# 7. Launch.
+# 7. Strip com.apple.provenance so Gatekeeper doesn't block launch of the
+#    ad-hoc-signed bundle. Provenance is kernel-protected and requires root
+#    to remove. This is the one prompt you'll see per install; everything
+#    above runs as $USER.
+blue "==> Stripping com.apple.provenance (requires sudo password)"
+if sudo xattr -rd com.apple.provenance "$DEST" 2>/dev/null; then
+  green "    provenance stripped"
+else
+  yellow "    sudo failed — Gatekeeper may block launch."
+  yellow "    Workaround: right-click $DEST in Finder and click Open."
+fi
+
+# 8. Launch.
 blue "==> Launching"
 open "$DEST"
 green "==> Done. Custom Cmux is now your /Applications/Cmux.app."
