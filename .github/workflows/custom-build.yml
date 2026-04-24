@@ -1,0 +1,103 @@
+name: Custom Build
+
+# Manual workflow that builds the cmux Debug .app on a GitHub-hosted macOS runner
+# and uploads it as an artifact. Designed to work on a fork without any self-hosted
+# infrastructure. Trigger from the Actions tab or via:
+#   gh workflow run custom-build.yml --ref <branch>
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - custom-visuals
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          XCODE_APP="$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$XCODE_APP" ]; then XCODE_APP="/Applications/Xcode.app"; fi
+          echo "Using $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Cache GhosttyKit.xcframework
+        id: cache-ghosttykit
+        uses: actions/cache@v4
+        with:
+          path: GhosttyKit.xcframework
+          key: ghosttykit-${{ hashFiles('.gitmodules', 'ghostty') }}
+
+      - name: Download pre-built GhosttyKit.xcframework
+        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+        run: ./scripts/download-prebuilt-ghosttykit.sh
+
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          xcodebuild -project GhosttyTabs.xcodeproj -scheme cmux -configuration Debug \
+            -resolvePackageDependencies
+
+      - name: Build cmux (Debug)
+        env:
+          CMUX_SKIP_ZIG_BUILD: "1"
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project GhosttyTabs.xcodeproj \
+            -scheme cmux \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Locate built app
+        id: locate
+        run: |
+          set -euo pipefail
+          APP_PATH="$(find build/Build/Products/Debug -maxdepth 2 -name '*.app' -type d | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app produced" >&2
+            ls -R build/Build/Products/Debug || true
+            exit 1
+          fi
+          APP_NAME="$(basename "$APP_PATH" .app)"
+          echo "Found $APP_PATH"
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Zip app for download
+        env:
+          APP_PATH: ${{ steps.locate.outputs.app_path }}
+          APP_NAME: ${{ steps.locate.outputs.app_name }}
+        run: |
+          set -euo pipefail
+          cd "$(dirname "$APP_PATH")"
+          zip -ry "/tmp/${APP_NAME}.zip" "$(basename "$APP_PATH")"
+          ls -lh "/tmp/${APP_NAME}.zip"
+
+      - name: Upload .app artifact
+        env:
+          APP_NAME: ${{ steps.locate.outputs.app_name }}
+        run: echo "ARTIFACT_PATH=/tmp/${APP_NAME}.zip" >> "$GITHUB_ENV"
+
+      - name: Publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmux-custom-visuals-app
+          path: ${{ env.ARTIFACT_PATH }}
+          if-no-files-found: error
+          retention-days: 14

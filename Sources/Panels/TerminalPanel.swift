@@ -22,6 +22,11 @@ final class TerminalPanel: Panel, ObservableObject {
     /// Published directory from the terminal
     @Published private(set) var directory: String = ""
 
+    /// Exit status of the most recently completed foreground command, if known.
+    /// Populated by an OSC 133 ;D handler (not yet wired) — until then, the
+    /// `ActiveTabHUD` falls back to "—" for this slot.
+    @Published var lastCommandExitStatus: Int?
+
     @Published private(set) var tmuxLayoutReport: TmuxPaneLayoutReport?
 
     /// Search state for find functionality

@@ -296,31 +296,40 @@ struct WorkspaceContentView: View {
                     ),
                     isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
                 )
-                PanelContentView(
-                    panel: panel,
-                    paneId: paneId,
-                    isFocused: isFocused,
-                    isSelectedInPane: isSelectedInPane,
-                    isVisibleInUI: isVisibleInUI,
-                    portalPriority: workspacePortalPriority,
-                    isSplit: isSplit,
-                    appearance: appearance,
-                    hasUnreadNotification: showsNotificationRing && !usesWorkspacePaneOverlay,
-                    onFocus: {
-                        // Keep bonsplit focus in sync with the AppKit first responder for the
-                        // active workspace. This prevents divergence between the blue focused-tab
-                        // indicator and where keyboard input/flash-focus actually lands.
-                        guard isWorkspaceInputActive else { return }
-                        guard workspace.panels[panel.id] != nil else { return }
-                        workspace.focusPanel(panel.id, trigger: .terminalFirstResponder)
-                    },
-                    onRequestPanelFocus: {
-                        guard isWorkspaceInputActive else { return }
-                        guard workspace.panels[panel.id] != nil else { return }
-                        workspace.focusPanel(panel.id)
-                    },
-                    onTriggerFlash: { workspace.triggerDebugFlash(panelId: panel.id) }
-                )
+                ZStack {
+                    if isFocused {
+                        FocusedPaneRainbow()
+                    }
+                    PanelContentView(
+                        panel: panel,
+                        paneId: paneId,
+                        isFocused: isFocused,
+                        isSelectedInPane: isSelectedInPane,
+                        isVisibleInUI: isVisibleInUI,
+                        portalPriority: workspacePortalPriority,
+                        isSplit: isSplit,
+                        appearance: appearance,
+                        hasUnreadNotification: showsNotificationRing && !usesWorkspacePaneOverlay,
+                        onFocus: {
+                            // Keep bonsplit focus in sync with the AppKit first responder for the
+                            // active workspace. This prevents divergence between the blue focused-tab
+                            // indicator and where keyboard input/flash-focus actually lands.
+                            guard isWorkspaceInputActive else { return }
+                            guard workspace.panels[panel.id] != nil else { return }
+                            workspace.focusPanel(panel.id, trigger: .terminalFirstResponder)
+                        },
+                        onRequestPanelFocus: {
+                            guard isWorkspaceInputActive else { return }
+                            guard workspace.panels[panel.id] != nil else { return }
+                            workspace.focusPanel(panel.id)
+                        },
+                        onTriggerFlash: { workspace.triggerDebugFlash(panelId: panel.id) }
+                    )
+                    PanelExpiredBorderOverlay(panelId: panel.id)
+                }
+                .overlay(alignment: .topTrailing) {
+                    PanelTimerHUD(panelId: panel.id)
+                }
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
                 }
@@ -384,6 +393,12 @@ struct WorkspaceContentView: View {
             } else {
                 bonsplitView
             }
+        }
+        .overlay(alignment: .top) {
+            ActiveTabHUD(workspace: workspace)
+        }
+        .overlay(alignment: .topTrailing) {
+            GlobalEditCounterHUD()
         }
     }
 
