@@ -514,8 +514,11 @@ struct GhosttyConfig {
     static func currentColorSchemePreference(
         appAppearance: NSAppearance? = NSApp?.effectiveAppearance
     ) -> ColorSchemePreference {
-        let bestMatch = appAppearance?.bestMatch(from: [.darkAqua, .aqua])
-        return bestMatch == .darkAqua ? .dark : .light
+        // custom-visuals: always use dark. Upstream PR #3123 introduced a light
+        // "Apple System Colors Light" fallback that makes everything glaringly
+        // white when the OS is in light mode. This fork is dark-only by choice.
+        _ = appAppearance
+        return .dark
     }
 
     static func resolveThemeName(

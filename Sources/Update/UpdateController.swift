@@ -99,42 +99,13 @@ class UpdateController {
     /// Start the updater. If startup fails, the error is shown via the custom UI.
     func startUpdaterIfNeeded() {
         guard !didStartUpdater else { return }
-        ensureSparkleInstallationCache()
-#if DEBUG
-        // Keep the permission-related defaults resettable for UI tests even though the
-        // delegate now suppresses Sparkle's permission UI entirely.
-        if ProcessInfo.processInfo.environment["CMUX_UI_TEST_RESET_SPARKLE_PERMISSION"] == "1" {
-            let defaults = UserDefaults.standard
-            defaults.removeObject(forKey: UpdateSettings.automaticChecksKey)
-            defaults.removeObject(forKey: UpdateSettings.automaticallyUpdateKey)
-            defaults.removeObject(forKey: UpdateSettings.scheduledCheckIntervalKey)
-            defaults.removeObject(forKey: UpdateSettings.sendProfileInfoKey)
-            defaults.removeObject(forKey: UpdateSettings.migrationKey)
-            defaults.synchronize()
-            UpdateLogStore.shared.append("reset sparkle permission defaults (ui test)")
-        }
-#endif
-        do {
-            try updater.start()
-            didStartUpdater = true
-            let interval = Int(updater.updateCheckInterval.rounded())
-            UpdateLogStore.shared.append(
-                "updater started (autoChecks=\(updater.automaticallyChecksForUpdates), interval=\(interval)s, autoDownloads=\(updater.automaticallyDownloadsUpdates))"
-            )
-            startLaunchUpdateProbeIfNeeded()
-        } catch {
-            userDriver.viewModel.state = .error(.init(
-                error: error,
-                retry: { [weak self] in
-                    self?.userDriver.viewModel.state = .idle
-                    self?.didStartUpdater = false
-                    self?.startUpdaterIfNeeded()
-                },
-                dismiss: { [weak self] in
-                    self?.userDriver.viewModel.state = .idle
-                }
-            ))
-        }
+        // custom-visuals: this fork isn't signed with a Sparkle EdDSA key, so the
+        // upstream auto-updater always fails with SUNoPublicDSAFoundError. We mark
+        // the updater "started" to short-circuit every downstream retry and rely
+        // on CustomUpdateChecker for actual update polling against the
+        // vichi7/cmux custom-latest release.
+        didStartUpdater = true
+        UpdateLogStore.shared.append("updater skipped (custom-visuals fork uses CustomUpdateChecker)")
     }
 
     private func startLaunchUpdateProbeIfNeeded() {
@@ -207,13 +178,13 @@ class UpdateController {
 
     /// Check for updates (used by the menu item).
     @objc func checkForUpdates() {
-        UpdateLogStore.shared.append("checkForUpdates invoked (state=\(viewModel.state.isIdle ? "idle" : "busy"))")
-        checkForUpdatesWhenReady(retries: readyRetryCount)
+        UpdateLogStore.shared.append("checkForUpdates routed to CustomUpdateChecker (custom-visuals fork)")
+        CustomUpdateChecker.shared.checkNow()
     }
 
     /// Check for updates using the custom popover-based UI.
     func checkForUpdatesInCustomUI() {
-        checkForUpdatesWhenReady(retries: readyRetryCount)
+        CustomUpdateChecker.shared.checkNow()
     }
 
     private func performCheckForUpdates() {

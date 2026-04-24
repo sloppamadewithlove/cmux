@@ -398,7 +398,10 @@ struct WorkspaceContentView: View {
             ActiveTabHUD(workspace: workspace)
         }
         .overlay(alignment: .topTrailing) {
-            GlobalEditCounterHUD()
+            VStack(alignment: .trailing, spacing: 0) {
+                CustomUpdateHUD()
+                GlobalEditCounterHUD()
+            }
         }
     }
 

@@ -904,6 +904,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let telemetryEnabled = TelemetrySettings.enabledForCurrentLaunch
         AppIconLaunchState.markDidFinishLaunching()
 
+        // custom-visuals: bring up the fork-specific services first so the UI
+        // pill has a status to read and the prompt counter starts observing
+        // its log file from the very first frame.
+        if !isRunningUnderXCTest {
+            PromptHookInstaller.installIfNeeded()
+            _ = GlobalEditCounter.shared
+            CustomUpdateChecker.shared.start()
+        }
+
         claimAuthCallbackURLSchemes()
 
         DistributedNotificationCenter.default().addObserver(
