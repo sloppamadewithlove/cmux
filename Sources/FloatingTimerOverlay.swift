@@ -21,12 +21,12 @@ struct FloatingTimerOverlay: View {
     @GestureState private var dragTranslation: CGSize = .zero
     @ObservedObject private var store = PanelActivityStore.shared
 
-    // v2 keys — bumped so any prior off-screen drag position from earlier
-    // builds is forgotten and the timer reappears at the new visible default.
-    private static let storedXKey = "floatingTimerOverlay.v2.x"
-    private static let storedYKey = "floatingTimerOverlay.v2.y"
-    private static let defaultX: Double = 16
-    private static let defaultY: Double = 56
+    // v3 keys — bumped so any prior off-screen or portal-covered drag position
+    // from earlier builds is forgotten and the timer reappears in the tab-bar area.
+    private static let storedXKey = "floatingTimerOverlay.v3.x"
+    private static let storedYKey = "floatingTimerOverlay.v3.y"
+    private static let defaultX: Double = 10
+    private static let defaultY: Double = 8
     private static let pillSize = CGSize(width: 110, height: 32)
 
     var body: some View {
@@ -66,8 +66,8 @@ struct FloatingTimerOverlay: View {
         )
         .shadow(radius: 6, y: 2)
         .contentShape(Capsule())
-        .help(Text(verbatim: "Drag to reposition. Resets on activity in any pane."))
-        .accessibilityLabel(Text(verbatim: "Workspace idle timer"))
+        .help(Text(verbatim: "Drag to reposition. Resets when a prompt is submitted."))
+        .accessibilityLabel(Text(verbatim: "Workspace prompt timer"))
         .accessibilityValue(Text(verbatim: formatted(remaining)))
     }
 
