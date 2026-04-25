@@ -32,6 +32,7 @@
 		CCAA0001000100010001000F /* CustomUpdateHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00010001000100010010 /* CustomUpdateHUD.swift */; };
 		CCAA00010001000100010011 /* PromptHookInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00010001000100010012 /* PromptHookInstaller.swift */; };
 		CCAA00010001000100010013 /* CLILauncherShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00010001000100010014 /* CLILauncherShortcuts.swift */; };
+		CCAA00010001000100010015 /* FloatingTimerOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAA00010001000100010016 /* FloatingTimerOverlay.swift */; };
 		4378399A7C0245EF8186F306 /* OmnibarAndToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B09C007F42697761B5F1A2AB /* OmnibarAndToolsTests.swift */; };
 		46F6AC15863EC84DCD3770A2 /* TerminalAndGhosttyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02FC74F2C27127CC565B3E8C /* TerminalAndGhosttyTests.swift */; };
 		4D8B37E0E11A29997632765F /* InternalTabDragConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 610008EA5E3744DDBE05C8E2 /* InternalTabDragConfiguration.swift */; };
@@ -260,6 +261,7 @@
 		CCAA00010001000100010010 /* CustomUpdateHUD.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CustomUpdateHUD.swift; sourceTree = "<group>"; };
 		CCAA00010001000100010012 /* PromptHookInstaller.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PromptHookInstaller.swift; sourceTree = "<group>"; };
 		CCAA00010001000100010014 /* CLILauncherShortcuts.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CLILauncherShortcuts.swift; sourceTree = "<group>"; };
+		CCAA00010001000100010016 /* FloatingTimerOverlay.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FloatingTimerOverlay.swift; sourceTree = "<group>"; };
 		0B54144FA244A0B482D2903D /* WindowGlassEffect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Windowing/WindowGlassEffect.swift; sourceTree = "<group>"; };
 		10D684CFFB8CDEF89CE2D9E1 /* TabManagerSessionSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabManagerSessionSnapshotTests.swift; sourceTree = "<group>"; };
 		14A7DC53B9CA33BE2A421711 /* WorkspacePullRequestSidebarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacePullRequestSidebarTests.swift; sourceTree = "<group>"; };
@@ -631,6 +633,7 @@
 				CCAA00010001000100010010 /* CustomUpdateHUD.swift */,
 				CCAA00010001000100010012 /* PromptHookInstaller.swift */,
 				CCAA00010001000100010014 /* CLILauncherShortcuts.swift */,
+				CCAA00010001000100010016 /* FloatingTimerOverlay.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -1023,6 +1026,7 @@
 				CCAA0001000100010001000F /* CustomUpdateHUD.swift in Sources */,
 				CCAA00010001000100010011 /* PromptHookInstaller.swift in Sources */,
 				CCAA00010001000100010013 /* CLILauncherShortcuts.swift in Sources */,
+				CCAA00010001000100010015 /* FloatingTimerOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -396,13 +396,11 @@ struct WorkspaceContentView: View {
         .overlay(alignment: .top) {
             ActiveTabHUD(workspace: workspace)
         }
-        .overlay(alignment: .topTrailing) {
-            // CustomUpdateHUD intentionally hidden in this fork — confusing "next 30m"
-            // pill replaced by the prompt counter, which now sits at the very top.
-            VStack(alignment: .trailing, spacing: 6) {
-                GlobalEditCounterHUD()
-                WorkspaceTimerHUD(workspaceId: workspace.id)
-            }
+        .overlay(alignment: .topLeading) {
+            GlobalEditCounterHUD()
+        }
+        .overlay(alignment: .topLeading) {
+            FloatingTimerOverlay(workspaceId: workspace.id)
         }
     }
 
