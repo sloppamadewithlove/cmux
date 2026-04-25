@@ -297,9 +297,6 @@ struct WorkspaceContentView: View {
                     isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
                 )
                 ZStack {
-                    if isFocused {
-                        FocusedPaneRainbow()
-                    }
                     PanelContentView(
                         panel: panel,
                         paneId: paneId,
@@ -325,10 +322,12 @@ struct WorkspaceContentView: View {
                         },
                         onTriggerFlash: { workspace.triggerDebugFlash(panelId: panel.id) }
                     )
-                    PanelExpiredBorderOverlay(panelId: panel.id)
-                }
-                .overlay(alignment: .topTrailing) {
-                    PanelTimerHUD(panelId: panel.id)
+                    // Border drawn around every pane when the workspace timer expires.
+                    WorkspaceExpiredBorderOverlay(workspaceId: workspace.id)
+                    // Rainbow border highlights the currently focused pane (MoonDev style).
+                    if isFocused {
+                        FocusedPaneRainbow()
+                    }
                 }
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
@@ -398,9 +397,11 @@ struct WorkspaceContentView: View {
             ActiveTabHUD(workspace: workspace)
         }
         .overlay(alignment: .topTrailing) {
-            VStack(alignment: .trailing, spacing: 0) {
-                CustomUpdateHUD()
+            // CustomUpdateHUD intentionally hidden in this fork — confusing "next 30m"
+            // pill replaced by the prompt counter, which now sits at the very top.
+            VStack(alignment: .trailing, spacing: 6) {
                 GlobalEditCounterHUD()
+                WorkspaceTimerHUD(workspaceId: workspace.id)
             }
         }
     }

@@ -14,22 +14,22 @@ struct GlobalEditCounterHUD: View {
         Button(action: { showingPopover.toggle() }) {
             HStack(spacing: 6) {
                 Text("\(counter.today)")
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .font(.system(size: 16, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .contentTransition(.numericText(value: Double(counter.today)))
-                Text(verbatim: "today")
-                    .font(.system(size: 9, weight: .semibold))
+                Text(verbatim: "pts")
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
             }
             .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.20), lineWidth: 0.5))
+            .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
-        .padding(.top, 36)               // below the CustomUpdateHUD
+        .padding(.top, 8)                // CustomUpdateHUD is hidden in this fork
         .padding(.trailing, 8)
         .popover(isPresented: $showingPopover, arrowEdge: .top) {
             PromptCounterPopover(

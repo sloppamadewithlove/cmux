@@ -55,9 +55,14 @@ private struct FocusedPanelPillBody: View {
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 0.5))
         .shadow(radius: 8, y: 2)
-        .padding(.top, 8)
-        .allowsHitTesting(false)
+        // Lifted into the title-bar safe area so it sits *above* the terminal,
+        // not partially overlapping the top of the surface like before.
+        .padding(.top, -2)
         .frame(maxWidth: 520)
+        // Capture taps on the pill itself so clicks here don't pass through to the
+        // terminal layer underneath (which was spawning a new tab/pane on each click).
+        .contentShape(Capsule())
+        .onTapGesture { /* swallow */ }
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 

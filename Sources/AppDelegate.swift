@@ -917,6 +917,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             PromptHookInstaller.installIfNeeded()
             _ = GlobalEditCounter.shared
             CustomUpdateChecker.shared.start()
+            CLILauncherShortcuts.shared.focusedTerminalPanelProvider = { [weak self] in
+                self?.tabManager?.selectedWorkspace?.focusedTerminalPanel
+            }
+            CLILauncherShortcuts.shared.installIfNeeded()
         }
 
         claimAuthCallbackURLSchemes()
