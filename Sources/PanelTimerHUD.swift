@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Top-right per-workspace countdown pill. Always visible. Counts down from 15 min
-/// based on `PanelActivityStore`. A submitted prompt resets it.
+/// based on `PanelActivityStore`. Activity in any pane in the workspace resets it.
 /// The pill itself never changes color or icon — the *only* visual signal of expiry
 /// is the pulsing red border drawn by `WorkspaceExpiredBorderOverlay`.
 struct WorkspaceTimerHUD: View {
@@ -30,7 +30,7 @@ struct WorkspaceTimerHUD: View {
         )
         .padding(.trailing, 8)
         .allowsHitTesting(false)
-        .accessibilityLabel(Text(verbatim: "Workspace prompt timer"))
+        .accessibilityLabel(Text(verbatim: "Workspace idle timer"))
         .accessibilityValue(Text(verbatim: formatted(remaining)))
     }
 

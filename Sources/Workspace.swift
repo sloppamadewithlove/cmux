@@ -10298,9 +10298,12 @@ final class Workspace: Identifiable, ObservableObject {
         trigger: FocusPanelTrigger = .standard
     ) {
         markExplicitFocusIntent(on: panelId)
-        // custom-visuals: the countdown is reset only by submitted prompts.
-        // Focus just keeps the panel-to-workspace mapping fresh for that reset.
+        // custom-visuals: a workspace's countdown is shared by every pane in it.
+        // Associate first so the panel-level record below also resets the workspace
+        // timer for any future activity routed via the panel API.
         PanelActivityStore.shared.associate(panelId: panelId, workspaceId: id)
+        PanelActivityStore.shared.recordActivity(panelId: panelId)
+        PanelActivityStore.shared.recordActivity(workspaceId: id)
         let panelDirectory = (panels[panelId] as? TerminalPanel)?.directory ?? ""
         GlobalEditCounter.shared.recordInteraction(workspaceTitle: title, directory: panelDirectory)
 #if DEBUG

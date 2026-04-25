@@ -1,17 +1,16 @@
 import Foundation
 import os
 
-/// Idempotently registers a Claude Code `UserPromptSubmit` hook that appends one
-/// JSON line per submitted prompt to `~/.cmux/prompts.jsonl`.
+/// Idempotently registers a Claude Code `Stop` hook that appends one JSON line
+/// per completed prompt → response round trip to `~/.cmux/prompts.jsonl`.
 ///
-/// The hook is the _only_ thing that feeds `GlobalEditCounter`'s prompt
+/// The hook is the _only_ thing that feeds `GlobalEditCounter`'s "successful
 /// prompts today" number — without it the counter sits at 0 forever. We install
 /// it on every app launch (not just first) so that if the user wipes their
 /// `~/.claude/settings.json`, the next Cmux launch restores the hook.
 ///
 /// Safety properties:
-///   • Never removes or reorders hooks except the old Cmux-owned Stop hook when
-///     migrating to UserPromptSubmit.
+///   • Never removes or reorders existing hooks.
 ///   • Detects its own marker (`cmux.promptCounter = true`) and skips re-adding.
 ///   • Writes the settings file atomically via a `.tmp` sibling + rename.
 ///   • Keeps a one-off `.cmux-backup-<ISO>` next to the original the first time
@@ -24,7 +23,7 @@ enum PromptHookInstaller {
     private static let commandSignature = ".cmux/prompts.jsonl"
     private static let logger = Logger(subsystem: "com.cmuxterm.app", category: "PromptHookInstaller")
 
-    /// Ensure the UserPromptSubmit hook is present in `~/.claude/settings.json`. Returns
+    /// Ensure the Stop hook is present in `~/.claude/settings.json`. Returns
     /// `true` if the file was mutated this call, `false` if already up to date.
     @discardableResult
     static func installIfNeeded() -> Bool {
@@ -38,37 +37,20 @@ enum PromptHookInstaller {
         var settings = loadSettings(at: settingsURL) ?? [:]
 
         var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
-        var didMutate = false
+        var stopHooks = (hooks["Stop"] as? [[String: Any]]) ?? []
 
-        // Migrate older custom builds from Stop to UserPromptSubmit. This removes
-        // only the hook whose command writes to our prompt counter file.
-        if let stopHooks = hooks["Stop"] as? [[String: Any]] {
-            let filtered = stopHooks.filter { !isOurHook($0) }
-            if filtered.count != stopHooks.count {
-                if filtered.isEmpty {
-                    hooks.removeValue(forKey: "Stop")
-                } else {
-                    hooks["Stop"] = filtered
-                }
-                didMutate = true
-            }
+        if stopHooks.contains(where: isOurHook) {
+            return false
         }
 
-        var submitHooks = (hooks["UserPromptSubmit"] as? [[String: Any]]) ?? []
-        if !submitHooks.contains(where: isOurHook) {
-            submitHooks.append(newHookEntry())
-            hooks["UserPromptSubmit"] = submitHooks
-            didMutate = true
-        }
-
-        guard didMutate else { return false }
-
+        stopHooks.append(newHookEntry())
+        hooks["Stop"] = stopHooks
         settings["hooks"] = hooks
 
         do {
             try backupIfFirstTime(settingsURL: settingsURL)
             try writeAtomically(settings: settings, to: settingsURL)
-            logger.info("Installed Claude Code UserPromptSubmit hook for cmux prompt counter")
+            logger.info("Installed Claude Code Stop hook for cmux prompt counter")
             return true
         } catch {
             logger.error("Failed to install prompt counter hook: \(error.localizedDescription, privacy: .public)")
@@ -79,11 +61,11 @@ enum PromptHookInstaller {
     // MARK: - Hook shape
 
     private static func newHookEntry() -> [String: Any] {
-        // Each prompt submission appends a JSON line with a timestamp.
+        // Each new prompt-complete event appends a JSON line with a timestamp.
         // The counter tolerates either raw ISO or {"ts": "..."} so future hook
         // schema changes don't require a migration.
         let command =
-            #"mkdir -p "$HOME/.cmux" && printf '{"ts":"%s","source":"claude-user-prompt-submit"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" >> "$HOME/.cmux/prompts.jsonl""#
+            #"mkdir -p "$HOME/.cmux" && printf '{"ts":"%s","source":"claude-stop"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" >> "$HOME/.cmux/prompts.jsonl""#
         return [
             "matcher": "*",
             "hooks": [[

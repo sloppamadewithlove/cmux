@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Top-right floating pill showing **submitted prompts today** across every
-/// project.
+/// Top-right floating pill showing **successful prompts today** across every
+/// project — one "prompt" = one round trip (user message → assistant response).
 /// Resets at local midnight via `GlobalEditCounter`'s date filter.
 struct GlobalEditCounterHUD: View {
     @ObservedObject private var counter = GlobalEditCounter.shared
@@ -30,7 +30,7 @@ struct GlobalEditCounterHUD: View {
                 logPath: counter.logFileURL.path
             )
         }
-        .help(Text(verbatim: "Submitted prompts today: \(counter.today) · lifetime \(counter.lifetime). Resets at 00:00 local."))
+        .help(Text(verbatim: "Successful prompts today: \(counter.today) · lifetime \(counter.lifetime). Resets at 00:00 local."))
         .animation(.spring(duration: 0.3), value: counter.today)
     }
 }
@@ -47,7 +47,7 @@ private struct PromptCounterPopover: View {
                 Text(verbatim: "\(today)")
                     .font(.system(size: 28, weight: .heavy, design: .rounded))
                     .monospacedDigit()
-                Text(verbatim: "submitted prompts today")
+                Text(verbatim: "successful prompts today")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.secondary)
             }
@@ -79,7 +79,7 @@ private struct PromptCounterPopover: View {
                 Text(verbatim: "Resets at 00:00 local.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                Text(verbatim: "Claude Code prompt-submit hook writes to:")
+                Text(verbatim: "Claude Code Stop hook writes to:")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(verbatim: logPath)

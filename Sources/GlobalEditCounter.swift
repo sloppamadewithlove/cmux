@@ -2,10 +2,10 @@ import Foundation
 import Combine
 import AppKit
 
-/// Cross-project "submitted prompts today" counter, shared with Claude Code via
+/// Cross-project "successful prompts today" counter, shared with Claude Code via
 /// a single append-only log at `~/.cmux/prompts.jsonl`. Each line is written by a
-/// Claude Code `UserPromptSubmit` hook (see `PromptHookInstaller`) when the user
-/// submits a prompt.
+/// Claude Code `Stop` hook (see `PromptHookInstaller`) at the moment the
+/// assistant finishes a response — i.e. one complete prompt → answer round trip.
 /// The counter is the count of lines whose timestamp falls in the current local
 /// day (midnight-to-midnight), so it "resets" automatically at 00:00 without a
 /// background job touching the file.
@@ -39,13 +39,13 @@ final class GlobalEditCounter: ObservableObject {
         self.logFileURL = stateDir.appendingPathComponent("prompts.jsonl", isDirectory: false)
 
         ensureStateFiles()
-        recompute(notifyPromptSubmission: false)
+        recompute()
         installFileObserver()
         scheduleMidnightRefresh()
     }
 
     /// Legacy no-op kept so `Workspace.focusPanel` still compiles. Focus events
-    /// are not submitted prompts in the current product definition.
+    /// are not "successful prompts" in the current product definition.
     func recordInteraction(workspaceTitle: String, directory: String) {
         _ = workspaceTitle
         _ = directory
@@ -74,18 +74,14 @@ final class GlobalEditCounter: ObservableObject {
             _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: data)
         }
-        recompute(notifyPromptSubmission: true)
+        recompute()
     }
 
-    private func recompute(notifyPromptSubmission: Bool) {
-        let previousLifetime = lifetime
+    private func recompute() {
         let (today, lifetime, last) = Self.countEntries(in: logFileURL)
         self.today = today
         self.lifetime = lifetime
         self.lastEntryAt = last
-        if notifyPromptSubmission, lifetime > previousLifetime {
-            PanelActivityStore.shared.recordPromptSubmission()
-        }
     }
 
     /// Linear scan of the log. File is tiny (one line per prompt ≈ 80 bytes;
@@ -147,7 +143,7 @@ final class GlobalEditCounter: ObservableObject {
         )
         source.setEventHandler { [weak self] in
             guard let self else { return }
-            self.recompute(notifyPromptSubmission: true)
+            self.recompute()
             // If the file was renamed/deleted, re-open and re-observe.
             let events = source.data
             if events.contains(.rename) || events.contains(.delete) {
@@ -168,7 +164,7 @@ final class GlobalEditCounter: ObservableObject {
         dayRolloverTimer?.invalidate()
         dayRolloverTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self?.recompute(notifyPromptSubmission: false)
+                self?.recompute()
                 self?.scheduleMidnightRefresh()
             }
         }
