@@ -1,15 +1,17 @@
 import SwiftUI
 
-/// Full-pane rainbow overlay drawn on top of the currently focused pane.
+/// Animated rainbow background for the currently focused pane.
 ///
-/// This is the **selection indicator** for cmux: when a terminal/tab is focused,
-/// a slowly-rotating rainbow gradient fills the entire pane content area at low
-/// opacity so the active pane is unmistakable at a glance, while terminal text
-/// underneath remains readable.
+/// Mounted *behind* `PanelContentView` in `WorkspaceContentView`'s ZStack so the
+/// AppKit-portaled Ghostty surface sits on top. The terminal's
+/// `background-opacity` (0.88 by default in `~/.config/ghostty/config`) lets the
+/// rainbow show through the terminal's background fill as a slowly rotating
+/// wash. Text, cursor, and selections render fully opaque on top, so readability
+/// is not affected — only the empty terminal background takes the rainbow tint.
 ///
 /// Performance: a single `AngularGradient` rotated by an implicit animation. No
 /// per-frame allocations or images. `.allowsHitTesting(false)` so it never
-/// intercepts clicks or scroll events on the terminal underneath.
+/// intercepts clicks or scroll events on the terminal.
 struct FocusedPaneRainbow: View {
     @State private var rotation: Angle = .degrees(0)
 
@@ -18,9 +20,6 @@ struct FocusedPaneRainbow: View {
     ]
 
     private static let cornerRadius: CGFloat = 6
-    private static let fillOpacity: Double = 0.18
-    private static let borderOpacity: Double = 0.85
-    private static let borderWidth: CGFloat = 1.5
     private static let rotationDuration: Double = 6
 
     var body: some View {
@@ -30,24 +29,19 @@ struct FocusedPaneRainbow: View {
             angle: rotation
         )
 
-        ZStack {
-            // Full-pane semi-transparent rainbow fill — primary selection cue.
-            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .fill(gradient)
-                .opacity(Self.fillOpacity)
-
-            // Crisp accent border so the pane edge stays defined against any
-            // terminal background, light or dark.
-            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(gradient, lineWidth: Self.borderWidth)
-                .opacity(Self.borderOpacity)
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
-                rotation = .degrees(360)
+        // Full-pane saturated rainbow fill at full opacity. The visible
+        // intensity is governed by the terminal's `background-opacity`: at 0.88
+        // the user sees roughly 12% of these colors mixed into the terminal
+        // background. Lower `background-opacity` in the ghostty config to make
+        // it more vivid.
+        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+            .fill(gradient)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onAppear {
+                withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
+                    rotation = .degrees(360)
+                }
             }
-        }
-        .accessibilityHidden(true)
     }
 }

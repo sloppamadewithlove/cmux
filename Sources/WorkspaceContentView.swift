@@ -297,6 +297,15 @@ struct WorkspaceContentView: View {
                     isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
                 )
                 ZStack {
+                    // Animated rainbow BACKGROUND for the focused pane. Mounted before
+                    // PanelContentView so it sits beneath the AppKit-portaled Ghostty
+                    // surface; the terminal's `background-opacity` (0.88 by default in
+                    // the user's ~/.config/ghostty/config) lets the rainbow shine
+                    // through the terminal background as a slowly rotating wash, while
+                    // text and cursor stay fully readable above it.
+                    if isFocused {
+                        FocusedPaneRainbow()
+                    }
                     PanelContentView(
                         panel: panel,
                         paneId: paneId,
@@ -324,10 +333,6 @@ struct WorkspaceContentView: View {
                     )
                     // Border drawn around every pane when the workspace timer expires.
                     WorkspaceExpiredBorderOverlay(workspaceId: workspace.id)
-                    // Rainbow border highlights the currently focused pane (MoonDev style).
-                    if isFocused {
-                        FocusedPaneRainbow()
-                    }
                 }
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
