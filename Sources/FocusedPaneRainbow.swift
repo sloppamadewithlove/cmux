@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// Animated rainbow border drawn around the currently focused pane.
+/// Full-pane rainbow overlay drawn on top of the currently focused pane.
 ///
 /// This is the **selection indicator** for cmux: when a terminal/tab is focused,
-/// a thick, slowly-rotating rainbow ring pulses around its content area so the
-/// active pane is unmistakable at a glance. Border-only (not a full-pane fill)
-/// so terminal text underneath stays fully readable.
+/// a slowly-rotating rainbow gradient fills the entire pane content area at low
+/// opacity so the active pane is unmistakable at a glance, while terminal text
+/// underneath remains readable.
 ///
 /// Performance: a single `AngularGradient` rotated by an implicit animation. No
 /// per-frame allocations or images. `.allowsHitTesting(false)` so it never
@@ -18,8 +18,10 @@ struct FocusedPaneRainbow: View {
     ]
 
     private static let cornerRadius: CGFloat = 6
-    private static let outerLineWidth: CGFloat = 4
-    private static let innerLineWidth: CGFloat = 1.5
+    private static let fillOpacity: Double = 0.18
+    private static let borderOpacity: Double = 0.85
+    private static let borderWidth: CGFloat = 1.5
+    private static let rotationDuration: Double = 6
 
     var body: some View {
         let gradient = AngularGradient(
@@ -29,22 +31,20 @@ struct FocusedPaneRainbow: View {
         )
 
         ZStack {
-            // Bold outer ring — the primary "this pane is selected" cue.
+            // Full-pane semi-transparent rainbow fill — primary selection cue.
             RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-                .strokeBorder(gradient, lineWidth: Self.outerLineWidth)
-                .shadow(color: .white.opacity(0.45), radius: 6)
-                .shadow(color: .purple.opacity(0.35), radius: 10)
+                .fill(gradient)
+                .opacity(Self.fillOpacity)
 
-            // Crisp inner accent so the ring reads cleanly against any terminal
-            // background color, light or dark.
-            RoundedRectangle(cornerRadius: Self.cornerRadius - 1, style: .continuous)
-                .strokeBorder(gradient, lineWidth: Self.innerLineWidth)
-                .padding(Self.outerLineWidth - 0.5)
-                .opacity(0.85)
+            // Crisp accent border so the pane edge stays defined against any
+            // terminal background, light or dark.
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(gradient, lineWidth: Self.borderWidth)
+                .opacity(Self.borderOpacity)
         }
         .allowsHitTesting(false)
         .onAppear {
-            withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
+            withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
                 rotation = .degrees(360)
             }
         }

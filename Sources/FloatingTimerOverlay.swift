@@ -21,10 +21,12 @@ struct FloatingTimerOverlay: View {
     @GestureState private var dragTranslation: CGSize = .zero
     @ObservedObject private var store = PanelActivityStore.shared
 
-    private static let storedXKey = "floatingTimerOverlay.x"
-    private static let storedYKey = "floatingTimerOverlay.y"
-    private static let defaultX: Double = 24
-    private static let defaultY: Double = 60
+    // v2 keys — bumped so any prior off-screen drag position from earlier
+    // builds is forgotten and the timer reappears at the new visible default.
+    private static let storedXKey = "floatingTimerOverlay.v2.x"
+    private static let storedYKey = "floatingTimerOverlay.v2.y"
+    private static let defaultX: Double = 16
+    private static let defaultY: Double = 56
     private static let pillSize = CGSize(width: 110, height: 32)
 
     var body: some View {

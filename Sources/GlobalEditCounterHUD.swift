@@ -9,21 +9,15 @@ struct GlobalEditCounterHUD: View {
 
     var body: some View {
         Button(action: { showingPopover.toggle() }) {
-            HStack(spacing: 6) {
-                Text("\(counter.today)")
-                    .font(.system(size: 16, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .contentTransition(.numericText(value: Double(counter.today)))
-                Text(verbatim: "pts")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-            }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
+            Text("\(counter.today)")
+                .font(.system(size: 16, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+                .contentTransition(.numericText(value: Double(counter.today)))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 0.5))
         }
         .buttonStyle(.plain)
         .padding(.top, 8)
