@@ -396,7 +396,7 @@ struct WorkspaceContentView: View {
         .overlay(alignment: .top) {
             ActiveTabHUD(workspace: workspace)
         }
-        .overlay(alignment: .topLeading) {
+        .overlay(alignment: .topTrailing) {
             GlobalEditCounterHUD()
         }
         .overlay(alignment: .topLeading) {

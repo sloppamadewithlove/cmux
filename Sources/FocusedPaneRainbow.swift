@@ -1,19 +1,15 @@
 import SwiftUI
 
-/// Full-pane rainbow spiral overlay drawn on top of the currently focused pane.
+/// Animated rainbow border drawn around the currently focused pane.
 ///
-/// Replaces the earlier outline-only border at user request: the previous version
-/// only outlined the focused pane, which was easy to miss when several tabs were
-/// open at once. This version covers the entire pane with a slowly rotating
-/// rainbow spiral at low opacity, blended additively so terminal text underneath
-/// stays readable while the focused pane becomes unmistakable at a glance.
+/// This is the **selection indicator** for cmux: when a terminal/tab is focused,
+/// a thick, slowly-rotating rainbow ring pulses around its content area so the
+/// active pane is unmistakable at a glance. Border-only (not a full-pane fill)
+/// so terminal text underneath stays fully readable.
 ///
-/// Performance: the spiral itself is a single `CGImage` rendered once via
-/// `RainbowSpiralImage.shared` and reused across all panes. The animation is
-/// just a rotation of that image (GPU-cheap, no per-frame redraw). A second
-/// `strokeBorder` layer adds a crisp edge accent on top of the fill.
-/// `.allowsHitTesting(false)` so it never intercepts clicks or scrolls on the
-/// terminal layer beneath.
+/// Performance: a single `AngularGradient` rotated by an implicit animation. No
+/// per-frame allocations or images. `.allowsHitTesting(false)` so it never
+/// intercepts clicks or scroll events on the terminal underneath.
 struct FocusedPaneRainbow: View {
     @State private var rotation: Angle = .degrees(0)
 
@@ -21,61 +17,37 @@ struct FocusedPaneRainbow: View {
         .red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink, .red
     ]
 
+    private static let cornerRadius: CGFloat = 6
+    private static let outerLineWidth: CGFloat = 4
+    private static let innerLineWidth: CGFloat = 1.5
+
     var body: some View {
+        let gradient = AngularGradient(
+            gradient: Gradient(colors: Self.rainbowStops),
+            center: .center,
+            angle: rotation
+        )
+
         ZStack {
-            spiralFill
-            edgeAccent
+            // Bold outer ring — the primary "this pane is selected" cue.
+            RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                .strokeBorder(gradient, lineWidth: Self.outerLineWidth)
+                .shadow(color: .white.opacity(0.45), radius: 6)
+                .shadow(color: .purple.opacity(0.35), radius: 10)
+
+            // Crisp inner accent so the ring reads cleanly against any terminal
+            // background color, light or dark.
+            RoundedRectangle(cornerRadius: Self.cornerRadius - 1, style: .continuous)
+                .strokeBorder(gradient, lineWidth: Self.innerLineWidth)
+                .padding(Self.outerLineWidth - 0.5)
+                .opacity(0.85)
         }
         .allowsHitTesting(false)
         .onAppear {
-            withAnimation(.linear(duration: 18).repeatForever(autoreverses: false)) {
+            withAnimation(.linear(duration: 5).repeatForever(autoreverses: false)) {
                 rotation = .degrees(360)
             }
         }
         .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var spiralFill: some View {
-        if let cgImage = RainbowSpiralImage.shared {
-            GeometryReader { proxy in
-                let side = max(proxy.size.width, proxy.size.height) * 1.5
-                Image(decorative: cgImage, scale: 1)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: side, height: side)
-                    .rotationEffect(rotation)
-                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
-                    .blendMode(.plusLighter)
-                    .opacity(0.22)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        } else {
-            // Fallback if CGImage construction failed: an angular gradient still
-            // identifies the focused pane, just without the spiral structure.
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(
-                    AngularGradient(
-                        gradient: Gradient(colors: Self.rainbowStops),
-                        center: .center,
-                        angle: rotation
-                    )
-                )
-                .blendMode(.plusLighter)
-                .opacity(0.22)
-        }
-    }
-
-    private var edgeAccent: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .strokeBorder(
-                AngularGradient(
-                    gradient: Gradient(colors: Self.rainbowStops),
-                    center: .center,
-                    angle: rotation
-                ),
-                lineWidth: 2.5
-            )
-            .shadow(color: .white.opacity(0.18), radius: 4)
     }
 }
