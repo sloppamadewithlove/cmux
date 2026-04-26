@@ -10,21 +10,33 @@ import os
 /// `~/.claude/settings.json`, the next Cmux launch restores the hook.
 ///
 /// Safety properties:
-///   • Never removes or reorders existing hooks.
-///   • Detects its own marker (`cmux.promptCounter = true`) and skips re-adding.
+///   • Never removes or reorders unrelated hooks.
+///   • Detects its own marker (`commandSignature`) and replaces older versions.
 ///   • Writes the settings file atomically via a `.tmp` sibling + rename.
 ///   • Keeps a one-off `.cmux-backup-<ISO>` next to the original the first time
 ///     we touch it.
+///
+/// History note: the v1 command used `date -u +%Y-%m-%dT%H:%M:%S.%3NZ`, but
+/// macOS BSD `date` does not expand `%N`, leaving the literal "3N" inside the
+/// timestamp (e.g. `2026-04-25T02:33:52.3NZ`). Those entries fail strict
+/// ISO-8601 parsing and silently never count. v2 drops fractional seconds and
+/// also captures `$PWD` so the counter can group prompts per project.
 enum PromptHookInstaller {
     /// Distinctive substring baked into our hook's command line. Matching on this
     /// keeps our detection tolerant to Claude Code schema changes (no custom
-    /// top-level keys on the hook entry) and to command tweaks that still point
-    /// at the same log file.
+    /// top-level keys on the hook entry) and lets us recognise older versions
+    /// of our own hook so we can replace them.
     private static let commandSignature = ".cmux/prompts.jsonl"
     private static let logger = Logger(subsystem: "com.cmuxterm.app", category: "PromptHookInstaller")
 
-    /// Ensure the Stop hook is present in `~/.claude/settings.json`. Returns
-    /// `true` if the file was mutated this call, `false` if already up to date.
+    /// Current command. Update this string (and only this string) when the
+    /// payload schema changes — installer will detect mismatched legacy versions
+    /// and replace them on next launch.
+    private static let currentCommand =
+        #"mkdir -p "$HOME/.cmux" && printf '{"ts":"%s","cwd":"%s","source":"claude-stop"}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PWD" >> "$HOME/.cmux/prompts.jsonl""#
+
+    /// Ensure the Stop hook is present and up to date in `~/.claude/settings.json`.
+    /// Returns `true` if the file was mutated this call, `false` if already current.
     @discardableResult
     static func installIfNeeded() -> Bool {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -39,18 +51,23 @@ enum PromptHookInstaller {
         var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
         var stopHooks = (hooks["Stop"] as? [[String: Any]]) ?? []
 
-        if stopHooks.contains(where: isOurHook) {
+        if stopHooks.contains(where: isCurrentVersion) {
             return false
         }
 
+        // Strip any older versions of our own hook so we don't accumulate
+        // duplicates, then append the current version.
+        let originalCount = stopHooks.count
+        stopHooks.removeAll(where: isOurSignature)
         stopHooks.append(newHookEntry())
+        let didReplace = stopHooks.count != originalCount + 1
         hooks["Stop"] = stopHooks
         settings["hooks"] = hooks
 
         do {
             try backupIfFirstTime(settingsURL: settingsURL)
             try writeAtomically(settings: settings, to: settingsURL)
-            logger.info("Installed Claude Code Stop hook for cmux prompt counter")
+            logger.info("\(didReplace ? "Updated" : "Installed", privacy: .public) Claude Code Stop hook for cmux prompt counter")
             return true
         } catch {
             logger.error("Failed to install prompt counter hook: \(error.localizedDescription, privacy: .public)")
@@ -61,23 +78,23 @@ enum PromptHookInstaller {
     // MARK: - Hook shape
 
     private static func newHookEntry() -> [String: Any] {
-        // Each new prompt-complete event appends a JSON line with a timestamp.
-        // The counter tolerates either raw ISO or {"ts": "..."} so future hook
-        // schema changes don't require a migration.
-        let command =
-            #"mkdir -p "$HOME/.cmux" && printf '{"ts":"%s","source":"claude-stop"}\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" >> "$HOME/.cmux/prompts.jsonl""#
         return [
             "matcher": "*",
             "hooks": [[
                 "type": "command",
-                "command": command,
+                "command": currentCommand,
             ]],
         ]
     }
 
-    private static func isOurHook(_ entry: [String: Any]) -> Bool {
+    private static func isOurSignature(_ entry: [String: Any]) -> Bool {
         guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains { ($0["command"] as? String)?.contains(commandSignature) == true }
+    }
+
+    private static func isCurrentVersion(_ entry: [String: Any]) -> Bool {
+        guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
+        return hooks.contains { ($0["command"] as? String) == currentCommand }
     }
 
     // MARK: - File I/O
@@ -94,7 +111,6 @@ enum PromptHookInstaller {
         )
         let tmp = url.appendingPathExtension("tmp-cmux-\(UUID().uuidString)")
         try data.write(to: tmp, options: .atomic)
-        // Replace the original in one syscall.
         _ = try FileManager.default.replaceItemAt(url, withItemAt: tmp)
     }
 

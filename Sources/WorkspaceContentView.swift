@@ -399,10 +399,11 @@ struct WorkspaceContentView: View {
             }
         }
         .overlay(alignment: .top) {
+            // Top-center pill: directory + last-command exit status + today's
+            // per-project prompt count (the bolt). The standalone top-right
+            // GlobalEditCounterHUD overlay was removed when the count moved
+            // inside this pill — see ActiveTabHUD for the new layout.
             ActiveTabHUD(workspace: workspace)
-        }
-        .overlay(alignment: .topTrailing) {
-            GlobalEditCounterHUD()
         }
         .overlay(alignment: .topLeading) {
             FloatingTimerOverlay(workspaceId: workspace.id)

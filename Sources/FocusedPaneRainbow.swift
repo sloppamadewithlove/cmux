@@ -4,10 +4,16 @@ import SwiftUI
 ///
 /// Mounted *behind* `PanelContentView` in `WorkspaceContentView`'s ZStack so the
 /// AppKit-portaled Ghostty surface sits on top. The terminal's
-/// `background-opacity` (0.88 by default in `~/.config/ghostty/config`) lets the
-/// rainbow show through the terminal's background fill as a slowly rotating
-/// wash. Text, cursor, and selections render fully opaque on top, so readability
-/// is not affected — only the empty terminal background takes the rainbow tint.
+/// `background-opacity` (currently `0.75` in `~/.config/ghostty/config`, raised
+/// from a previous `0.88`) lets the rainbow show through the terminal's
+/// background fill as a slowly rotating wash. Text, cursor, and selections
+/// render fully opaque on top, so readability is not affected — only the empty
+/// terminal background takes the rainbow tint.
+///
+/// Visible rainbow intensity ≈ `(1 − background-opacity)`, so 0.75 gives roughly
+/// 25% of these saturated colors mixed into the terminal background. Lower
+/// `background-opacity` further to make it more vivid; raise it back toward
+/// 1.0 to return to a near-solid terminal background.
 ///
 /// Performance: a single `AngularGradient` rotated by an implicit animation. No
 /// per-frame allocations or images. `.allowsHitTesting(false)` so it never
@@ -30,8 +36,8 @@ struct FocusedPaneRainbow: View {
         )
 
         // Full-pane saturated rainbow fill at full opacity. The visible
-        // intensity is governed by the terminal's `background-opacity`: at 0.88
-        // the user sees roughly 12% of these colors mixed into the terminal
+        // intensity is governed by the terminal's `background-opacity`: at 0.75
+        // the user sees roughly 25% of these colors mixed into the terminal
         // background. Lower `background-opacity` in the ghostty config to make
         // it more vivid.
         RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
