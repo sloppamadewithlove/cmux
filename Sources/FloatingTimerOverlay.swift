@@ -246,15 +246,14 @@ private final class FloatingTimerPanel: NSPanel {
         contentView = hostView
         hostView.frame = NSRect(x: 0, y: 0, width: 134, height: 44)
         // Versioned autosave name so a future re-design can reset everyone's
-        // saved position without surprising existing users mid-flight. Setting
-        // the property only registers the name — explicit `setFrameUsingName`
-        // is what actually restores a previously-saved frame on subsequent
-        // launches. On first launch the call is a no-op (returns false), and
-        // FloatingTimerPanelController will nudge the panel near the parent
-        // window's top-left so it lands somewhere visible.
-        let autosaveName: NSWindow.FrameAutosaveName = "cmux.floatingTimerPanel.v1"
-        self.frameAutosaveName = autosaveName
-        _ = self.setFrameUsingName(autosaveName)
+        // saved position without surprising existing users mid-flight. The
+        // `frameAutosaveName` property is read-only in Swift; the only way to
+        // set it is via `setFrameAutosaveName(_:)`, which both registers the
+        // name *and* immediately restores a previously-saved frame for that
+        // name. On first launch the saved frame doesn't exist yet, the call
+        // returns false, and FloatingTimerPanelController nudges the panel
+        // near the parent window's top-left so it lands somewhere visible.
+        _ = self.setFrameAutosaveName("cmux.floatingTimerPanel.v1")
     }
 
     func update(workspaceId newId: UUID) {
