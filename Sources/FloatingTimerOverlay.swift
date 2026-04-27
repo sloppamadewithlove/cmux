@@ -1,53 +1,290 @@
+import AppKit
+import ObjectiveC.runtime
 import SwiftUI
 
-/// Draggable workspace countdown timer that the user can position anywhere inside
-/// the cmux window. Replaces the fixed top-trailing `WorkspaceTimerHUD` placement
-/// so a user who wants the timer prominently visible can park it wherever it sits
-/// best in their layout.
+/// Public entry point for the workspace countdown timer pill.
 ///
-/// Position is persisted globally (not per-workspace) via `@AppStorage`, so the
-/// timer stays where you parked it across workspace switches and app restarts.
-/// Content is per-workspace — it always shows the countdown for whichever workspace
-/// the overlay is rendered in.
+/// Earlier revisions of this overlay were a SwiftUI `.overlay` mounted inside
+/// `WorkspaceContentView`. That works visually for the top-center pill because
+/// the title-bar strip has no AppKit portal, but the timer's draggable position
+/// often lands inside the bonsplit pane area where the portaled Ghostty surface
+/// (an NSWindow-hosted child view, not a SwiftUI sibling) renders above any
+/// SwiftUI overlay below it. The result was a timer that was technically
+/// rendered but stuck behind the terminal — invisible and undraggable.
 ///
-/// To escape the cmux window bounds entirely (i.e. drag the timer onto another
-/// monitor), this overlay would need to migrate to a floating `NSPanel`. The
-/// current implementation is window-local for simplicity.
+/// Solution: host the pill in a borderless floating `NSPanel` that is added as
+/// a child window of the cmux main window. As an `NSWindow` it sits at its own
+/// window level (`.floating`), above every in-window content view including
+/// the AppKit portal. Drag is handled by `isMovableByWindowBackground`, so the
+/// user grabs the pill and AppKit moves the panel — true free-drag anywhere on
+/// screen, not just within the cmux window. Position persists across launches
+/// via `frameAutosaveName`.
+///
+/// Mounting contract:
+/// - The `FloatingTimerOverlay` SwiftUI view itself is 0×0 and invisible. Its
+///   only job is to wire a thin `NSView` into the host window so we can find
+///   that window from AppKit and attach the panel to it.
+/// - The caller (currently `WorkspaceContentView`) is responsible for mounting
+///   this overlay only when the workspace is the active one
+///   (`isWorkspaceInputActive`). cmux keeps inactive workspace views alive in
+///   the tree, so without that gate every workspace's overlay would race to
+///   own the same per-window panel.
 struct FloatingTimerOverlay: View {
     let workspaceId: UUID
 
-    @AppStorage(Self.storedXKey) private var storedX: Double = Self.defaultX
-    @AppStorage(Self.storedYKey) private var storedY: Double = Self.defaultY
-    @GestureState private var dragTranslation: CGSize = .zero
-    @ObservedObject private var store = PanelActivityStore.shared
-
-    // v2 keys — bumped so any prior off-screen drag position from earlier
-    // builds is forgotten and the timer reappears at the new visible default.
-    private static let storedXKey = "floatingTimerOverlay.v2.x"
-    private static let storedYKey = "floatingTimerOverlay.v2.y"
-    private static let defaultX: Double = 16
-    private static let defaultY: Double = 56
-    private static let pillSize = CGSize(width: 110, height: 32)
-
     var body: some View {
-        GeometryReader { proxy in
-            timerPill
-                .frame(width: Self.pillSize.width, height: Self.pillSize.height)
-                .offset(
-                    x: clampedX(in: proxy.size) + dragTranslation.width,
-                    y: clampedY(in: proxy.size) + dragTranslation.height
-                )
-                .gesture(dragGesture(in: proxy.size))
-        }
-        .allowsHitTesting(true)
+        FloatingTimerPanelHost(workspaceId: workspaceId)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+    }
+}
+
+// MARK: - SwiftUI ↔ AppKit bridge
+
+private struct FloatingTimerPanelHost: NSViewRepresentable {
+    let workspaceId: UUID
+
+    func makeNSView(context: Context) -> FloatingTimerHookView {
+        FloatingTimerHookView(workspaceId: workspaceId)
     }
 
-    private var timerPill: some View {
+    func updateNSView(_ nsView: FloatingTimerHookView, context: Context) {
+        nsView.update(workspaceId: workspaceId)
+    }
+
+    static func dismantleNSView(_ nsView: FloatingTimerHookView, coordinator: ()) {
+        nsView.willGoAway()
+    }
+}
+
+/// Invisible NSView whose sole purpose is to find its host `NSWindow` so the
+/// matching `FloatingTimerPanel` can be parented to it. Using `viewDidMoveToWindow`
+/// makes us robust to delayed window assignment (the SwiftUI hosting controller
+/// may be configured before the window is keyed up).
+private final class FloatingTimerHookView: NSView {
+    private var workspaceId: UUID
+    private weak var attachedWindow: NSWindow?
+
+    init(workspaceId: UUID) {
+        self.workspaceId = workspaceId
+        super.init(frame: .zero)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not used")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window {
+            attachedWindow = window
+            FloatingTimerPanelController.controller(for: window).show(workspaceId: workspaceId)
+        } else if let prior = attachedWindow {
+            // Pass our workspaceId so the controller only hides if WE are the
+            // currently shown workspace. This protects against the workspace-
+            // switch race where the new workspace's show() fires before the old
+            // workspace's view-removal callback — without the guard, the new
+            // workspace's panel would be hidden right after appearing.
+            FloatingTimerPanelController.controller(for: prior)
+                .hideIfMatching(workspaceId: workspaceId)
+            attachedWindow = nil
+        }
+    }
+
+    func update(workspaceId newId: UUID) {
+        workspaceId = newId
+        if let window = attachedWindow ?? window {
+            FloatingTimerPanelController.controller(for: window).show(workspaceId: newId)
+        }
+    }
+
+    func willGoAway() {
+        if let prior = attachedWindow {
+            FloatingTimerPanelController.controller(for: prior)
+                .hideIfMatching(workspaceId: workspaceId)
+            attachedWindow = nil
+        }
+    }
+}
+
+// MARK: - Per-window panel controller
+
+/// One controller (and one panel) per cmux `NSWindow`. Stored on the window via
+/// an objc associated object so multiple workspaces in the same window share a
+/// single panel and a single autosaved drag position.
+@MainActor
+private final class FloatingTimerPanelController {
+    private static var associationKey: UInt8 = 0
+
+    static func controller(for window: NSWindow) -> FloatingTimerPanelController {
+        if let existing = objc_getAssociatedObject(window, &associationKey) as? FloatingTimerPanelController {
+            return existing
+        }
+        let made = FloatingTimerPanelController(parent: window)
+        objc_setAssociatedObject(window, &associationKey, made, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return made
+    }
+
+    private weak var parent: NSWindow?
+    private var panel: FloatingTimerPanel?
+    private var currentWorkspaceId: UUID?
+
+    private init(parent: NSWindow) {
+        self.parent = parent
+    }
+
+    func show(workspaceId: UUID) {
+        currentWorkspaceId = workspaceId
+        let panel = ensurePanel()
+        panel.update(workspaceId: workspaceId)
+        attachToParentIfNeeded(panel)
+        if !panel.isVisible {
+            positionAtSensibleDefaultIfUnsetFrame(panel)
+        }
+        panel.orderFront(nil)
+    }
+
+    /// Hide the panel only if the workspace asking us to hide is still the one
+    /// we're currently showing. Guards the workspace-switch race where the new
+    /// workspace's show() can fire before the previous workspace's
+    /// view-removal callback.
+    func hideIfMatching(workspaceId: UUID) {
+        guard currentWorkspaceId == workspaceId else { return }
+        panel?.orderOut(nil)
+        currentWorkspaceId = nil
+    }
+
+    private func ensurePanel() -> FloatingTimerPanel {
+        if let existing = panel { return existing }
+        let made = FloatingTimerPanel()
+        panel = made
+        return made
+    }
+
+    private func attachToParentIfNeeded(_ panel: FloatingTimerPanel) {
+        guard let parent else { return }
+        if panel.parent !== parent {
+            panel.parent?.removeChildWindow(panel)
+            parent.addChildWindow(panel, ordered: .above)
+        }
+    }
+
+    /// On first show, place the panel near the top-left of the parent window so
+    /// it lands somewhere obvious. Subsequent launches restore the user's
+    /// dragged position from frameAutosaveName.
+    private func positionAtSensibleDefaultIfUnsetFrame(_ panel: FloatingTimerPanel) {
+        guard let parent else { return }
+        // If autosaved frame already moved us into a non-default position, don't
+        // override it. Heuristic: the autosaved frame, if any, has been applied
+        // by `setFrameAutosaveName` during init. We just nudge to the parent
+        // window's top-left when the panel hasn't yet been ordered front.
+        let parentFrame = parent.frame
+        let inset: CGFloat = 16
+        let topLeft = NSPoint(
+            x: parentFrame.minX + inset,
+            y: parentFrame.maxY - inset
+        )
+        // Only set frame if it's still at AppKit's "no autosaved frame" default
+        // (the frame we initialized with). Comparing against the init frame keeps
+        // us from clobbering a restored position on app relaunch.
+        if panel.frame.origin == FloatingTimerPanel.initialOrigin {
+            panel.setFrameTopLeftPoint(topLeft)
+        }
+    }
+}
+
+// MARK: - The panel itself
+
+/// Borderless floating NSPanel that hosts the timer pill. Always above the host
+/// window's content because (a) it's a child window with `.above` ordering and
+/// (b) it sits at `level = .floating`. Drag handled by AppKit via
+/// `isMovableByWindowBackground`.
+private final class FloatingTimerPanel: NSPanel {
+    static let initialOrigin = NSPoint(x: 100, y: 100)
+    private let host: NSHostingView<FloatingTimerPill>
+    private var workspaceId: UUID
+
+    init() {
+        // Build the SwiftUI hosting view with a placeholder UUID first; the
+        // controller will call `update(workspaceId:)` immediately after init,
+        // before the panel is ever ordered front. We assign all of our own
+        // stored properties before calling super.init() to satisfy Swift's
+        // Phase-1 init rules.
+        let initialId = UUID()
+        let pill = FloatingTimerPill(workspaceId: initialId)
+        let hostView = NSHostingView(rootView: pill)
+        hostView.autoresizingMask = [.width, .height]
+        self.host = hostView
+        self.workspaceId = initialId
+
+        super.init(
+            contentRect: NSRect(
+                origin: Self.initialOrigin,
+                size: CGSize(width: 134, height: 44)
+            ),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+
+        isFloatingPanel = true
+        level = .floating
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = false
+        isMovableByWindowBackground = true
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = true
+        collectionBehavior = [.fullScreenAuxiliary, .canJoinAllSpaces]
+        animationBehavior = .none
+        titleVisibility = .hidden
+        titlebarAppearsTransparent = true
+
+        contentView = hostView
+        hostView.frame = NSRect(x: 0, y: 0, width: 134, height: 44)
+        // Versioned autosave name so a future re-design can reset everyone's
+        // saved position without surprising existing users mid-flight. Setting
+        // the property only registers the name — explicit `setFrameUsingName`
+        // is what actually restores a previously-saved frame on subsequent
+        // launches. On first launch the call is a no-op (returns false), and
+        // FloatingTimerPanelController will nudge the panel near the parent
+        // window's top-left so it lands somewhere visible.
+        let autosaveName: NSWindow.FrameAutosaveName = "cmux.floatingTimerPanel.v1"
+        self.frameAutosaveName = autosaveName
+        _ = self.setFrameUsingName(autosaveName)
+    }
+
+    func update(workspaceId newId: UUID) {
+        guard newId != workspaceId else { return }
+        workspaceId = newId
+        host.rootView = FloatingTimerPill(workspaceId: newId)
+    }
+
+    // Keep the panel from stealing focus from the cmux window. The user should
+    // be able to type in the terminal while the pill floats above it.
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
+
+// MARK: - Pill content
+
+/// Visual pill rendered inside the floating panel. Same look as the prior
+/// in-window overlay: timer icon + monospaced countdown, ultraThin material,
+/// red-on-expiry. Per-pane red border (`PanelExpiredBorderOverlay`) is still
+/// the canonical expiry signal — this pill is informational.
+private struct FloatingTimerPill: View {
+    let workspaceId: UUID
+    @ObservedObject private var store = PanelActivityStore.shared
+
+    var body: some View {
         let _ = store.tick
         let remaining = store.remainingTime(workspaceId: workspaceId)
         let expired = remaining <= 0
 
-        return HStack(spacing: 6) {
+        HStack(spacing: 6) {
             Image(systemName: "timer")
                 .font(.system(size: 13, weight: .semibold))
             Text(formatted(remaining))
@@ -65,43 +302,11 @@ struct FloatingTimerOverlay: View {
             )
         )
         .shadow(radius: 6, y: 2)
-        .contentShape(Capsule())
+        // Outer breathing room so the shadow isn't clipped by panel bounds.
+        .padding(6)
         .help(Text(verbatim: "Drag to reposition. Resets on activity in any pane."))
         .accessibilityLabel(Text(verbatim: "Workspace idle timer"))
         .accessibilityValue(Text(verbatim: formatted(remaining)))
-    }
-
-    private func dragGesture(in containerSize: CGSize) -> some Gesture {
-        DragGesture()
-            .updating($dragTranslation) { value, state, _ in
-                state = value.translation
-            }
-            .onEnded { value in
-                let newX = clampedX(in: containerSize) + value.translation.width
-                let newY = clampedY(in: containerSize) + value.translation.height
-                storedX = clamp(newX, min: 0, max: maxX(in: containerSize))
-                storedY = clamp(newY, min: 0, max: maxY(in: containerSize))
-            }
-    }
-
-    private func clampedX(in size: CGSize) -> Double {
-        clamp(storedX, min: 0, max: maxX(in: size))
-    }
-
-    private func clampedY(in size: CGSize) -> Double {
-        clamp(storedY, min: 0, max: maxY(in: size))
-    }
-
-    private func maxX(in size: CGSize) -> Double {
-        max(0, Double(size.width) - Double(Self.pillSize.width))
-    }
-
-    private func maxY(in size: CGSize) -> Double {
-        max(0, Double(size.height) - Double(Self.pillSize.height))
-    }
-
-    private func clamp(_ value: Double, min lo: Double, max hi: Double) -> Double {
-        Swift.max(lo, Swift.min(hi, value))
     }
 
     private func formatted(_ seconds: TimeInterval) -> String {

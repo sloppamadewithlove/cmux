@@ -12406,6 +12406,18 @@ private struct TabItemView: View, Equatable {
                 contextMenuState.hasDeferredWorkspaceObservationInvalidation = false
                 return
             }
+            // Same root cause as the customColorHex bypass directly above:
+            // "Rename Workspace…" runs an NSAlert from a context-menu button
+            // action; the menu's `.onDisappear` does not reliably fire after
+            // that flow, so the deferred snapshot never gets flushed and the
+            // sidebar row stays on the old title forever. Apply title changes
+            // immediately, matching the color bypass.
+            if deferredBaseline?.title != nextSnapshot.title {
+                workspaceSnapshotStorage = nextSnapshot
+                contextMenuState.pendingWorkspaceSnapshot = nil
+                contextMenuState.hasDeferredWorkspaceObservationInvalidation = false
+                return
+            }
             if force || deferredBaseline != nextSnapshot {
                 contextMenuState.hasDeferredWorkspaceObservationInvalidation = true
                 contextMenuState.pendingWorkspaceSnapshot = nextSnapshot

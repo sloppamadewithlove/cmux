@@ -406,7 +406,14 @@ struct WorkspaceContentView: View {
             ActiveTabHUD(workspace: workspace)
         }
         .overlay(alignment: .topLeading) {
-            FloatingTimerOverlay(workspaceId: workspace.id)
+            // Only the active workspace's overlay should attach the floating
+            // timer panel. cmux keeps every workspace's view alive in the tree
+            // (see ContentView.swift mountedWorkspaces ForEach), so without
+            // this gate every workspace would race to own the same per-window
+            // panel via FloatingTimerPanelController.
+            if isWorkspaceInputActive {
+                FloatingTimerOverlay(workspaceId: workspace.id)
+            }
         }
     }
 
