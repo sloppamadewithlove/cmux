@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Animated rainbow background for the currently focused pane.
+/// Rainbow background for the currently focused pane.
 ///
 /// Mounted *behind* `PanelContentView` in `WorkspaceContentView`'s ZStack so the
 /// AppKit-portaled Ghostty surface sits on top. The terminal's
@@ -15,10 +15,12 @@ import SwiftUI
 /// `background-opacity` further to make it more vivid; raise it back toward
 /// 1.0 to return to a near-solid terminal background.
 ///
-/// Performance: a single `AngularGradient` rotated by an implicit animation. No
-/// per-frame allocations or images. `.allowsHitTesting(false)` so it never
-/// intercepts clicks or scroll events on the terminal.
+/// Performance: static by default so cmux can idle without keeping WindowServer
+/// busy. Set `cmux.customVisuals.animateRainbow` in UserDefaults to opt back into
+/// slow motion when plugged in. `.allowsHitTesting(false)` so it never intercepts
+/// clicks or scroll events on the terminal.
 struct FocusedPaneRainbow: View {
+    @AppStorage("cmux.customVisuals.animateRainbow") private var animateRainbow = false
     @State private var rotation: Angle = .degrees(0)
 
     private static let rainbowStops: [Color] = [
@@ -26,7 +28,7 @@ struct FocusedPaneRainbow: View {
     ]
 
     private static let cornerRadius: CGFloat = 6
-    private static let rotationDuration: Double = 6
+    private static let rotationDuration: Double = 60
 
     var body: some View {
         let gradient = AngularGradient(
@@ -45,9 +47,25 @@ struct FocusedPaneRainbow: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .onAppear {
-                withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
-                    rotation = .degrees(360)
-                }
+                updateAnimation()
             }
+            .onChange(of: animateRainbow) { _, _ in
+                updateAnimation()
+            }
+    }
+
+    private func updateAnimation() {
+        guard animateRainbow else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                rotation = .degrees(0)
+            }
+            return
+        }
+
+        withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
+            rotation = .degrees(360)
+        }
     }
 }
