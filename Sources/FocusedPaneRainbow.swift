@@ -15,12 +15,14 @@ import SwiftUI
 /// `background-opacity` further to make it more vivid; raise it back toward
 /// 1.0 to return to a near-solid terminal background.
 ///
-/// Performance: static by default so cmux can idle without keeping WindowServer
-/// busy. Set `cmux.customVisuals.animateRainbow` in UserDefaults to opt back into
-/// slow motion when plugged in. `.allowsHitTesting(false)` so it never intercepts
-/// clicks or scroll events on the terminal.
+/// Performance: renders the rainbow spiral once into a cached bitmap and rotates
+/// that image, instead of re-rendering a full-pane AngularGradient every frame.
+/// Set `cmux.customVisuals.animateRainbow` in UserDefaults to disable/enable the
+/// motion. `.allowsHitTesting(false)` so it never intercepts clicks or scroll
+/// events on the terminal.
 struct FocusedPaneRainbow: View {
-    @AppStorage("cmux.customVisuals.animateRainbow") private var animateRainbow = false
+    @AppStorage("cmux.customVisuals.animateRainbow") private var animateRainbow = true
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var rotation: Angle = .degrees(0)
 
     private static let rainbowStops: [Color] = [
@@ -28,22 +30,30 @@ struct FocusedPaneRainbow: View {
     ]
 
     private static let cornerRadius: CGFloat = 6
-    private static let rotationDuration: Double = 60
+    private static let rotationDuration: Double = 90
 
     var body: some View {
-        let gradient = AngularGradient(
-            gradient: Gradient(colors: Self.rainbowStops),
-            center: .center,
-            angle: rotation
-        )
+        GeometryReader { geometry in
+            let side = max(1, ceil(hypot(geometry.size.width, geometry.size.height)))
 
-        // Full-pane saturated rainbow fill at full opacity. The visible
-        // intensity is governed by the terminal's `background-opacity`: at 0.75
-        // the user sees roughly 25% of these colors mixed into the terminal
-        // background. Lower `background-opacity` in the ghostty config to make
-        // it more vivid.
-        RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
-            .fill(gradient)
+            Group {
+                if let image = RainbowSpiralImage.shared {
+                    Image(decorative: image, scale: 1)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFill()
+                        .frame(width: side, height: side)
+                        .rotationEffect(rotation)
+                        .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                } else {
+                    AngularGradient(
+                        gradient: Gradient(colors: Self.rainbowStops),
+                        center: .center
+                    )
+                }
+            }
+        }
+            .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .onAppear {
@@ -52,16 +62,25 @@ struct FocusedPaneRainbow: View {
             .onChange(of: animateRainbow) { _, _ in
                 updateAnimation()
             }
+            .onChange(of: reduceMotion) { _, _ in
+                updateAnimation()
+            }
     }
 
     private func updateAnimation() {
-        guard animateRainbow else {
+        guard animateRainbow, !reduceMotion else {
             var transaction = Transaction()
             transaction.disablesAnimations = true
             withTransaction(transaction) {
                 rotation = .degrees(0)
             }
             return
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            rotation = .degrees(0)
         }
 
         withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
