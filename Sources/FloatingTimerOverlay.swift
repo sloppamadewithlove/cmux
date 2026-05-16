@@ -2,9 +2,9 @@ import AppKit
 import ObjectiveC.runtime
 import SwiftUI
 
-/// Public entry point for the workspace countdown timer pill.
+/// Public entry point for the draggable workspace metrics pill.
 ///
-/// Earlier revisions of this overlay were a SwiftUI `.overlay` mounted inside
+/// Earlier revisions of the timer were a SwiftUI `.overlay` mounted inside
 /// `WorkspaceContentView`. That works visually for the top-center pill because
 /// the title-bar strip has no AppKit portal, but the timer's draggable position
 /// often lands inside the bonsplit pane area where the portaled Ghostty surface
@@ -173,7 +173,7 @@ private final class FloatingTimerPanelController {
         panel.order(.above, relativeTo: parent.windowNumber)
     }
 
-    /// On first show, place the panel near the top-left of the parent window so
+    /// On first show, place the panel near the top-center of the parent window so
     /// it lands somewhere obvious. Subsequent launches restore the user's
     /// dragged position from frameAutosaveName.
     private func positionAtSensibleDefaultIfUnsetFrame(_ panel: FloatingTimerPanel) {
@@ -181,18 +181,18 @@ private final class FloatingTimerPanelController {
         // If autosaved frame already moved us into a non-default position, don't
         // override it. Heuristic: the autosaved frame, if any, has been applied
         // by `setFrameAutosaveName` during init. We just nudge to the parent
-        // window's top-left when the panel hasn't yet been ordered front.
+        // window's top-center when the panel hasn't yet been ordered front.
         let parentFrame = parent.frame
         let inset: CGFloat = 16
-        let topLeft = NSPoint(
-            x: parentFrame.minX + inset,
+        let topCenter = NSPoint(
+            x: parentFrame.midX - (panel.frame.width / 2),
             y: parentFrame.maxY - inset
         )
         // Only set frame if it's still at AppKit's "no autosaved frame" default
         // (the frame we initialized with). Comparing against the init frame keeps
         // us from clobbering a restored position on app relaunch.
         if panel.frame.origin == FloatingTimerPanel.initialOrigin {
-            panel.setFrameTopLeftPoint(topLeft)
+            panel.setFrameTopLeftPoint(topCenter)
         }
     }
 }
@@ -205,6 +205,7 @@ private final class FloatingTimerPanelController {
 /// `isMovableByWindowBackground`.
 private final class FloatingTimerPanel: NSPanel {
     static let initialOrigin = NSPoint(x: 100, y: 100)
+    private static let panelSize = CGSize(width: 296, height: 46)
     private let host: NSHostingView<FloatingTimerPill>
     private var workspaceId: UUID
 
@@ -224,7 +225,7 @@ private final class FloatingTimerPanel: NSPanel {
         super.init(
             contentRect: NSRect(
                 origin: Self.initialOrigin,
-                size: CGSize(width: 134, height: 44)
+                size: Self.panelSize
             ),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -246,16 +247,16 @@ private final class FloatingTimerPanel: NSPanel {
         titlebarAppearsTransparent = true
 
         contentView = hostView
-        hostView.frame = NSRect(x: 0, y: 0, width: 134, height: 44)
-        // Versioned autosave name so a future re-design can reset everyone's
-        // saved position without surprising existing users mid-flight. The
+        hostView.frame = NSRect(origin: .zero, size: Self.panelSize)
+        // Versioned autosave name so this redesign starts with the new
+        // top-center default instead of reusing the old timer-only position. The
         // `frameAutosaveName` property is read-only in Swift; the only way to
         // set it is via `setFrameAutosaveName(_:)`, which both registers the
         // name *and* immediately restores a previously-saved frame for that
         // name. On first launch the saved frame doesn't exist yet, the call
         // returns false, and FloatingTimerPanelController nudges the panel
-        // near the parent window's top-left so it lands somewhere visible.
-        _ = self.setFrameAutosaveName("cmux.floatingTimerPanel.v1")
+        // near the parent window's top-center so it lands somewhere visible.
+        _ = self.setFrameAutosaveName("cmux.floatingMetricsPanel.v1")
     }
 
     func update(workspaceId newId: UUID) {
@@ -272,26 +273,33 @@ private final class FloatingTimerPanel: NSPanel {
 
 // MARK: - Pill content
 
-/// Visual pill rendered inside the floating panel: timer icon + monospaced
-/// countdown, ultraThin material, red in the final minute and after expiry.
+/// Visual pill rendered inside the floating panel: idle timer, today's prompt
+/// edits, and all-time prompt edits. No project/folder context is shown here.
 private struct FloatingTimerPill: View {
     let workspaceId: UUID
     @ObservedObject private var store = PanelActivityStore.shared
+    @ObservedObject private var counter = GlobalEditCounter.shared
 
     var body: some View {
         let _ = store.tick
         let remaining = store.remainingTime(workspaceId: workspaceId)
         let isWarning = remaining <= 60
 
-        HStack(spacing: 6) {
-            Image(systemName: "timer")
-                .font(.system(size: 13, weight: .semibold))
-            Text(formatted(remaining))
-                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                .monospacedDigit()
+        HStack(spacing: 10) {
+            metric(label: "Timer", value: formatted(remaining), isWarning: isWarning)
+
+            Divider()
+                .frame(height: 16)
+
+            metric(label: "Day", value: "\(counter.today)")
+
+            Divider()
+                .frame(height: 16)
+
+            metric(label: "Ever", value: "\(counter.lifetime)")
         }
-        .foregroundStyle(isWarning ? Color.red : Color.primary)
-        .padding(.horizontal, 12)
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(
@@ -303,9 +311,26 @@ private struct FloatingTimerPill: View {
         .shadow(radius: 6, y: 2)
         // Outer breathing room so the shadow isn't clipped by panel bounds.
         .padding(6)
-        .help(Text(verbatim: "Drag to reposition. Resets on activity in any pane."))
-        .accessibilityLabel(Text(verbatim: "Workspace idle timer"))
-        .accessibilityValue(Text(verbatim: formatted(remaining)))
+        .help(Text(verbatim: "Drag to reposition. Timer resets on activity. Day and Ever count prompt edits."))
+        .accessibilityLabel(Text(verbatim: "Workspace metrics"))
+        .accessibilityValue(Text(verbatim: "\(formatted(remaining)), \(counter.today) today, \(counter.lifetime) ever"))
+        .animation(.spring(duration: 0.3), value: counter.today)
+        .animation(.spring(duration: 0.3), value: counter.lifetime)
+    }
+
+    @ViewBuilder
+    private func metric(label: String, value: String, isWarning: Bool = false) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 4) {
+            Text(verbatim: label)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+            Text(verbatim: value)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(isWarning ? Color.red : Color.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
     }
 
     private func formatted(_ seconds: TimeInterval) -> String {

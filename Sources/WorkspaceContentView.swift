@@ -396,16 +396,9 @@ struct WorkspaceContentView: View {
                 bonsplitView
             }
         }
-        .overlay(alignment: .top) {
-            // Top-center pill: directory + last-command exit status + today's
-            // per-project prompt count (the bolt). The standalone top-right
-            // GlobalEditCounterHUD overlay was removed when the count moved
-            // inside this pill — see ActiveTabHUD for the new layout.
-            ActiveTabHUD(workspace: workspace)
-        }
         .overlay(alignment: .topLeading) {
             // Only the active workspace's overlay should attach the floating
-            // timer panel. cmux keeps every workspace's view alive in the tree
+            // metrics panel. cmux keeps every workspace's view alive in the tree
             // (see ContentView.swift mountedWorkspaces ForEach), so without
             // this gate every workspace would race to own the same per-window
             // panel via FloatingTimerPanelController.
