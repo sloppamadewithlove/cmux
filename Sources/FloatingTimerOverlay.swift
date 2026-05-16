@@ -130,6 +130,7 @@ private final class FloatingTimerPanelController {
     private weak var parent: NSWindow?
     private var panel: FloatingTimerPanel?
     private var currentWorkspaceId: UUID?
+    private var hasPlacedPanelThisLaunch = false
 
     private init(parent: NSWindow) {
         self.parent = parent
@@ -140,9 +141,7 @@ private final class FloatingTimerPanelController {
         let panel = ensurePanel()
         panel.update(workspaceId: workspaceId)
         attachToParentIfNeeded(panel)
-        if !panel.isVisible {
-            positionAtSensibleDefaultIfUnsetFrame(panel)
-        }
+        placePanelIfNeeded(panel)
         panel.orderFront(nil)
     }
 
@@ -174,26 +173,25 @@ private final class FloatingTimerPanelController {
     }
 
     /// On first show, place the panel near the top-center of the parent window so
-    /// it lands somewhere obvious. Subsequent launches restore the user's
-    /// dragged position from frameAutosaveName.
-    private func positionAtSensibleDefaultIfUnsetFrame(_ panel: FloatingTimerPanel) {
+    /// it lands somewhere obvious. If AppKit restores a stale/offscreen autosaved
+    /// frame, clamp it back into the host window instead of letting the pill vanish.
+    private func placePanelIfNeeded(_ panel: FloatingTimerPanel) {
         guard let parent else { return }
-        // If autosaved frame already moved us into a non-default position, don't
-        // override it. Heuristic: the autosaved frame, if any, has been applied
-        // by `setFrameAutosaveName` during init. We just nudge to the parent
-        // window's top-center when the panel hasn't yet been ordered front.
+        if panel.frame.origin == FloatingTimerPanel.initialOrigin ||
+            !hasPlacedPanelThisLaunch ||
+            !parent.frame.insetBy(dx: -32, dy: -32).intersects(panel.frame) {
+            panel.setFrameTopLeftPoint(topCenterPoint(for: panel, in: parent))
+            hasPlacedPanelThisLaunch = true
+        }
+    }
+
+    private func topCenterPoint(for panel: FloatingTimerPanel, in parent: NSWindow) -> NSPoint {
         let parentFrame = parent.frame
         let inset: CGFloat = 16
-        let topCenter = NSPoint(
+        return NSPoint(
             x: parentFrame.midX - (panel.frame.width / 2),
             y: parentFrame.maxY - inset
         )
-        // Only set frame if it's still at AppKit's "no autosaved frame" default
-        // (the frame we initialized with). Comparing against the init frame keeps
-        // us from clobbering a restored position on app relaunch.
-        if panel.frame.origin == FloatingTimerPanel.initialOrigin {
-            panel.setFrameTopLeftPoint(topCenter)
-        }
     }
 }
 
@@ -205,7 +203,7 @@ private final class FloatingTimerPanelController {
 /// `isMovableByWindowBackground`.
 private final class FloatingTimerPanel: NSPanel {
     static let initialOrigin = NSPoint(x: 100, y: 100)
-    private static let panelSize = CGSize(width: 296, height: 46)
+    private static let panelSize = CGSize(width: 340, height: 48)
     private let host: NSHostingView<FloatingTimerPill>
     private var workspaceId: UUID
 
@@ -248,15 +246,10 @@ private final class FloatingTimerPanel: NSPanel {
 
         contentView = hostView
         hostView.frame = NSRect(origin: .zero, size: Self.panelSize)
-        // Versioned autosave name so this redesign starts with the new
-        // top-center default instead of reusing the old timer-only position. The
-        // `frameAutosaveName` property is read-only in Swift; the only way to
-        // set it is via `setFrameAutosaveName(_:)`, which both registers the
-        // name *and* immediately restores a previously-saved frame for that
-        // name. On first launch the saved frame doesn't exist yet, the call
-        // returns false, and FloatingTimerPanelController nudges the panel
-        // near the parent window's top-center so it lands somewhere visible.
-        _ = self.setFrameAutosaveName("cmux.floatingMetricsPanel.v1")
+        // Versioned autosave name so this redesign starts with the wider
+        // top-center pill instead of reusing an old timer-only position. The
+        // controller also clamps stale restored frames back into the host window.
+        _ = self.setFrameAutosaveName("cmux.floatingMetricsPanel.v2")
     }
 
     func update(workspaceId newId: UUID) {
