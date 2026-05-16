@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Pulsing red border drawn around every pane in a workspace whose countdown has
-/// reached zero. Driven by `PanelActivityStore.isExpired(workspaceId:)`, so a
-/// single expiry flashes every pane in the workspace at once.
+/// Static red border drawn around every pane whose global prompt timer has
+/// reached zero.
 struct WorkspaceExpiredBorderOverlay: View {
     let workspaceId: UUID
     @ObservedObject private var store = PanelActivityStore.shared
@@ -22,8 +21,7 @@ struct WorkspaceExpiredBorderOverlay: View {
     }
 }
 
-/// Legacy per-panel border wrapper kept for source compatibility. Reads the
-/// panel-level expired flag directly so existing tests / callers stay working.
+/// Legacy per-panel border wrapper kept for source compatibility.
 struct PanelExpiredBorderOverlay: View {
     let panelId: UUID
     @ObservedObject private var store = PanelActivityStore.shared

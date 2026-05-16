@@ -1,13 +1,13 @@
 import Foundation
 import Combine
 
-/// Process-wide tracker of "last activity" per terminal panel **and per workspace**.
+/// Process-wide prompt timer shared by every workspace.
 ///
-/// MoonDev-style behavior: every pane in the same workspace shares one 15-minute
-/// countdown. Activity in any pane resets the workspace timer; expiry flashes
-/// every pane in that workspace red. The legacy per-panel API is kept so callers
-/// that still work in panel terms continue to compile, but visual chrome reads
-/// the workspace-scoped values.
+/// The countdown is global, not per panel or per project. Switching panes,
+/// tabs, or workspaces must not reset it. The only reset signal is a completed
+/// prompt appended to `~/.cmux/prompts.jsonl`, surfaced by `GlobalEditCounter`.
+/// The panel/workspace-shaped API is kept so existing call sites continue to
+/// compile, but all visual chrome reads the same global countdown.
 ///
 /// A single 1Hz timer drives `tick`, which is the only `@Published` property views
 /// observe. All per-key state lives in dictionaries computed against `tick`'s wall
@@ -25,29 +25,36 @@ final class PanelActivityStore: ObservableObject {
     /// they should call `remainingTime(...)` / `isExpired(...)`.
     @Published private(set) var tick: UInt64 = 0
 
-    private var lastActivityByPanelId: [UUID: Date] = [:]
-    private var lastActivityByWorkspaceId: [UUID: Date] = [:]
-    /// Reverse mapping so `recordActivity(panelId:)` can also bump the workspace
-    /// when callers route through the panel-level API.
+    private var lastPromptAt: Date
+    private var observedPromptLifetime: Int
     private var workspaceForPanel: [UUID: UUID] = [:]
     private var timer: Timer?
+    private var promptSubscription: AnyCancellable?
 
     private init(expirationInterval: TimeInterval = 15 * 60) {
         self.expirationInterval = expirationInterval
+        let counter = GlobalEditCounter.shared
+        self.lastPromptAt = counter.lastEntryAt ?? Date()
+        self.observedPromptLifetime = counter.lifetime
         startTimer()
+        promptSubscription = counter.$lifetime
+            .combineLatest(counter.$lastEntryAt)
+            .sink { [weak self] lifetime, lastEntryAt in
+                Task { @MainActor in
+                    self?.applyPromptState(lifetime: lifetime, lastEntryAt: lastEntryAt)
+                }
+            }
     }
 
     // MARK: - Workspace-scoped API (preferred)
 
     func recordActivity(workspaceId: UUID) {
-        lastActivityByWorkspaceId[workspaceId] = Date()
-        objectWillChange.send()
+        _ = workspaceId
     }
 
     func remainingTime(workspaceId: UUID) -> TimeInterval {
-        let last = lastActivityByWorkspaceId[workspaceId] ?? seedFirstWorkspaceObservation(workspaceId: workspaceId)
-        let elapsed = Date().timeIntervalSince(last)
-        return max(0, expirationInterval - elapsed)
+        _ = workspaceId
+        return globalRemainingTime()
     }
 
     func isExpired(workspaceId: UUID) -> Bool {
@@ -55,59 +62,58 @@ final class PanelActivityStore: ObservableObject {
     }
 
     func forget(workspaceId: UUID) {
-        guard lastActivityByWorkspaceId.removeValue(forKey: workspaceId) != nil else { return }
-        objectWillChange.send()
+        workspaceForPanel = workspaceForPanel.filter { $0.value != workspaceId }
     }
 
     // MARK: - Panel-scoped API (legacy, kept for source compat)
 
-    /// Mark the panel as freshly active. Resets its countdown to a full
-    /// `expirationInterval`. If the panel has been associated with a workspace via
-    /// `associate(panelId:workspaceId:)`, the workspace timer is reset too.
+    /// Legacy source-compatible hook. Focus/activity is no longer a timer reset
+    /// signal; prompt completion is the only reset signal.
     func recordActivity(panelId: UUID) {
-        lastActivityByPanelId[panelId] = Date()
-        if let workspaceId = workspaceForPanel[panelId] {
-            lastActivityByWorkspaceId[workspaceId] = Date()
-        }
-        objectWillChange.send()
+        _ = panelId
     }
 
     /// Drop the panel from tracking when it is closed, so we don't leak stale entries.
     func forget(panelId: UUID) {
-        let removedPanel = lastActivityByPanelId.removeValue(forKey: panelId) != nil
-        let removedAssoc = workspaceForPanel.removeValue(forKey: panelId) != nil
-        guard removedPanel || removedAssoc else { return }
-        objectWillChange.send()
+        workspaceForPanel.removeValue(forKey: panelId)
     }
 
     func remainingTime(panelId: UUID) -> TimeInterval {
-        let last = lastActivityByPanelId[panelId] ?? seedFirstPanelObservation(panelId: panelId)
-        let elapsed = Date().timeIntervalSince(last)
-        return max(0, expirationInterval - elapsed)
+        _ = panelId
+        return globalRemainingTime()
     }
 
     func isExpired(panelId: UUID) -> Bool {
         remainingTime(panelId: panelId) <= 0
     }
 
-    /// Bind a panel to its workspace so the panel-level `recordActivity` also resets
-    /// the workspace timer. Safe to call repeatedly; the latest mapping wins.
+    /// Bind a panel to its workspace for source compatibility. The mapping no
+    /// longer affects the countdown, which is global across workspaces.
     func associate(panelId: UUID, workspaceId: UUID) {
         workspaceForPanel[panelId] = workspaceId
     }
 
     // MARK: - Private
 
-    private func seedFirstPanelObservation(panelId: UUID) -> Date {
-        let now = Date()
-        lastActivityByPanelId[panelId] = now
-        return now
+    private func globalRemainingTime() -> TimeInterval {
+        let elapsed = Date().timeIntervalSince(lastPromptAt)
+        return max(0, expirationInterval - elapsed)
     }
 
-    private func seedFirstWorkspaceObservation(workspaceId: UUID) -> Date {
-        let now = Date()
-        lastActivityByWorkspaceId[workspaceId] = now
-        return now
+    private func applyPromptState(lifetime: Int, lastEntryAt: Date?) {
+        defer {
+            observedPromptLifetime = max(observedPromptLifetime, lifetime)
+        }
+
+        if lifetime > observedPromptLifetime {
+            lastPromptAt = lastEntryAt ?? Date()
+            objectWillChange.send()
+            return
+        }
+
+        guard let lastEntryAt, lastEntryAt > lastPromptAt else { return }
+        lastPromptAt = lastEntryAt
+        objectWillChange.send()
     }
 
     private func startTimer() {

@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Top-right per-workspace countdown pill. Always visible. Counts down from 15 min
-/// based on `PanelActivityStore`. Activity in any pane in the workspace resets it.
-/// The pill turns red in the final minute and stays red after expiry.
+/// Top-right countdown pill. Always visible. Counts down from 15 min based on
+/// the global prompt timer; only a completed prompt resets it. The pill turns
+/// red only after expiry.
 struct WorkspaceTimerHUD: View {
     let workspaceId: UUID
     @ObservedObject private var store = PanelActivityStore.shared
@@ -11,7 +11,7 @@ struct WorkspaceTimerHUD: View {
         // Reading `store.tick` here forces the view to re-evaluate every second.
         let _ = store.tick
         let remaining = store.remainingTime(workspaceId: workspaceId)
-        let isWarning = remaining <= 60
+        let isExpired = remaining <= 0
 
         HStack(spacing: 4) {
             Image(systemName: "timer")
@@ -20,10 +20,12 @@ struct WorkspaceTimerHUD: View {
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
         }
-        .foregroundStyle(isWarning ? Color.red : Color.primary.opacity(0.9))
+        .foregroundStyle(isExpired ? Color.white : Color.primary.opacity(0.9))
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(
+            Capsule().fill(isExpired ? AnyShapeStyle(Color.red) : AnyShapeStyle(.ultraThinMaterial))
+        )
         .overlay(
             Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5)
         )
@@ -52,6 +54,7 @@ struct PanelTimerHUD: View {
     var body: some View {
         let _ = store.tick
         let remaining = store.remainingTime(panelId: panelId)
+        let isExpired = remaining <= 0
 
         HStack(spacing: 4) {
             Image(systemName: "timer")
@@ -60,10 +63,12 @@ struct PanelTimerHUD: View {
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
         }
-        .foregroundStyle(Color.primary.opacity(0.85))
+        .foregroundStyle(isExpired ? Color.white : Color.primary.opacity(0.85))
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(
+            Capsule().fill(isExpired ? AnyShapeStyle(Color.red) : AnyShapeStyle(.ultraThinMaterial))
+        )
         .overlay(Capsule().stroke(.white.opacity(0.15), lineWidth: 0.5))
         .padding(.top, 32)
         .padding(.trailing, 8)

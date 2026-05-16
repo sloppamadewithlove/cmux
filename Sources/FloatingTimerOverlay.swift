@@ -283,10 +283,10 @@ private struct FloatingTimerPill: View {
     var body: some View {
         let _ = store.tick
         let remaining = store.remainingTime(workspaceId: workspaceId)
-        let isWarning = remaining <= 60
+        let isExpired = remaining <= 0
 
         HStack(spacing: 10) {
-            metric(label: "Timer", value: formatted(remaining), isWarning: isWarning)
+            metric(label: "Timer", value: formatted(remaining), isExpired: isExpired)
 
             Divider()
                 .frame(height: 16)
@@ -298,10 +298,12 @@ private struct FloatingTimerPill: View {
 
             metric(label: "Ever", value: "\(counter.lifetime)")
         }
-        .foregroundStyle(.primary)
+        .foregroundStyle(isExpired ? Color.white : Color.primary)
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: Capsule())
+        .background(
+            Capsule().fill(isExpired ? AnyShapeStyle(Color.red) : AnyShapeStyle(.ultraThinMaterial))
+        )
         .overlay(
             Capsule().stroke(
                 Color.white.opacity(0.18),
@@ -311,7 +313,7 @@ private struct FloatingTimerPill: View {
         .shadow(radius: 6, y: 2)
         // Outer breathing room so the shadow isn't clipped by panel bounds.
         .padding(6)
-        .help(Text(verbatim: "Drag to reposition. Timer resets on activity. Day and Ever count prompt edits."))
+        .help(Text(verbatim: "Drag to reposition. Timer resets when a prompt completes. Day and Ever count prompt edits."))
         .accessibilityLabel(Text(verbatim: "Workspace metrics"))
         .accessibilityValue(Text(verbatim: "\(formatted(remaining)), \(counter.today) today, \(counter.lifetime) ever"))
         .animation(.spring(duration: 0.3), value: counter.today)
@@ -319,15 +321,15 @@ private struct FloatingTimerPill: View {
     }
 
     @ViewBuilder
-    private func metric(label: String, value: String, isWarning: Bool = false) -> some View {
+    private func metric(label: String, value: String, isExpired: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             Text(verbatim: label)
                 .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(isExpired ? Color.white.opacity(0.75) : Color.secondary)
             Text(verbatim: value)
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(isWarning ? Color.red : Color.primary)
+                .foregroundStyle(isExpired ? Color.white : Color.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
