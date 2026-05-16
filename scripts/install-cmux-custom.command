@@ -3,7 +3,7 @@
 # install-cmux-custom.command
 #
 # Double-click this file to install the latest custom-built Cmux from the
-# 'custom-latest' release of vichi7/cmux into /Applications/Cmux.app.
+# 'custom-latest' release of sloppamadewithlove/cmux into /Applications/Cmux.app.
 #
 # Steps performed:
 #   1. Download the latest custom-latest release zip from GitHub.
@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-REPO="vichi7/cmux"
+REPO="sloppamadewithlove/cmux"
 TAG="custom-latest"
 ZIP_NAME="cmux-custom.zip"
 SHA_NAME="cmux-custom.zip.sha256"

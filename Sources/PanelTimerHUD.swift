@@ -2,8 +2,7 @@ import SwiftUI
 
 /// Top-right per-workspace countdown pill. Always visible. Counts down from 15 min
 /// based on `PanelActivityStore`. Activity in any pane in the workspace resets it.
-/// The pill itself never changes color or icon — the *only* visual signal of expiry
-/// is the pulsing red border drawn by `WorkspaceExpiredBorderOverlay`.
+/// The pill turns red in the final minute and stays red after expiry.
 struct WorkspaceTimerHUD: View {
     let workspaceId: UUID
     @ObservedObject private var store = PanelActivityStore.shared
@@ -12,7 +11,7 @@ struct WorkspaceTimerHUD: View {
         // Reading `store.tick` here forces the view to re-evaluate every second.
         let _ = store.tick
         let remaining = store.remainingTime(workspaceId: workspaceId)
-        let expired = remaining <= 0
+        let isWarning = remaining <= 60
 
         HStack(spacing: 4) {
             Image(systemName: "timer")
@@ -21,12 +20,12 @@ struct WorkspaceTimerHUD: View {
                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
         }
-        .foregroundStyle(expired ? Color.red : Color.primary.opacity(0.9))
+        .foregroundStyle(isWarning ? Color.red : Color.primary.opacity(0.9))
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(
-            Capsule().stroke(expired ? Color.red.opacity(0.7) : .white.opacity(0.18), lineWidth: 0.5)
+            Capsule().stroke(.white.opacity(0.18), lineWidth: 0.5)
         )
         .padding(.trailing, 8)
         .allowsHitTesting(false)

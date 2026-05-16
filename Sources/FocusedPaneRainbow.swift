@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// Rainbow background for the currently focused pane.
@@ -15,22 +16,27 @@ import SwiftUI
 /// `background-opacity` further to make it more vivid; raise it back toward
 /// 1.0 to return to a near-solid terminal background.
 ///
-/// Performance: renders the rainbow spiral once into a cached bitmap and rotates
-/// that image, instead of re-rendering a full-pane AngularGradient every frame.
-/// Set `cmux.customVisuals.animateRainbow` in UserDefaults to disable/enable the
-/// motion. `.allowsHitTesting(false)` so it never intercepts clicks or scroll
-/// events on the terminal.
+/// Performance: renders the rainbow spiral once into a cached bitmap, then steps
+/// the rotation a few degrees every few seconds. That keeps visible motion without
+/// a continuous 60Hz SwiftUI animation loop. Set
+/// `cmux.customVisuals.animateRainbow` in UserDefaults to disable/enable motion.
+/// `.allowsHitTesting(false)` so it never intercepts clicks or scroll events on
+/// the terminal.
 struct FocusedPaneRainbow: View {
     @AppStorage("cmux.customVisuals.animateRainbow") private var animateRainbow = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var rotation: Angle = .degrees(0)
+    @State private var rotationDegrees: Double = 0
 
     private static let rainbowStops: [Color] = [
         .red, .orange, .yellow, .green, .cyan, .blue, .purple, .pink, .red
     ]
 
     private static let cornerRadius: CGFloat = 6
-    private static let rotationDuration: Double = 90
+    private static let motionStepInterval: TimeInterval = 4
+    private static let degreesPerStep: Double = 2
+    private static let motionTimer = Timer
+        .publish(every: motionStepInterval, on: .main, in: .common)
+        .autoconnect()
 
     var body: some View {
         GeometryReader { geometry in
@@ -43,7 +49,7 @@ struct FocusedPaneRainbow: View {
                         .interpolation(.high)
                         .scaledToFill()
                         .frame(width: side, height: side)
-                        .rotationEffect(rotation)
+                        .rotationEffect(.degrees(rotationDegrees))
                         .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
                 } else {
                     AngularGradient(
@@ -57,34 +63,27 @@ struct FocusedPaneRainbow: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .onAppear {
-                updateAnimation()
+                resetMotionIfNeeded()
             }
             .onChange(of: animateRainbow) { _, _ in
-                updateAnimation()
+                resetMotionIfNeeded()
             }
             .onChange(of: reduceMotion) { _, _ in
-                updateAnimation()
+                resetMotionIfNeeded()
+            }
+            .onReceive(Self.motionTimer) { _ in
+                guard animateRainbow, !reduceMotion else { return }
+                rotationDegrees = (rotationDegrees + Self.degreesPerStep)
+                    .truncatingRemainder(dividingBy: 360)
             }
     }
 
-    private func updateAnimation() {
-        guard animateRainbow, !reduceMotion else {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                rotation = .degrees(0)
-            }
-            return
-        }
-
+    private func resetMotionIfNeeded() {
+        guard !animateRainbow || reduceMotion else { return }
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            rotation = .degrees(0)
-        }
-
-        withAnimation(.linear(duration: Self.rotationDuration).repeatForever(autoreverses: false)) {
-            rotation = .degrees(360)
+            rotationDegrees = 0
         }
     }
 }

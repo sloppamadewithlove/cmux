@@ -85,8 +85,8 @@ final class GlobalEditCounter: ObservableObject {
         let displayName: String
         if let directory,
            !directory.trimmingCharacters(in: .whitespaces).isEmpty {
-            let root = Self.resolveProjectRoot(for: directory)
-            resolvedKey = root
+            let root = Self.resolveProjectRootPath(for: directory)
+            resolvedKey = Self.projectKey(for: root)
             displayName = (root as NSString).lastPathComponent
         } else {
             resolvedKey = nil
@@ -173,8 +173,8 @@ final class GlobalEditCounter: ObservableObject {
             if let currentProjectKey,
                let entryCwd = entry.cwd,
                !entryCwd.isEmpty {
-                let entryRoot = rootCache.root(for: entryCwd)
-                if entryRoot == currentProjectKey {
+                let entryRootKey = rootCache.key(for: entryCwd)
+                if entryRootKey == currentProjectKey {
                     projectLifetime += 1
                     if entry.date >= todayStart { projectToday += 1 }
                     if projectLast == nil || entry.date > projectLast! {
@@ -243,7 +243,7 @@ final class GlobalEditCounter: ObservableObject {
     /// Falls back to the input path if no ancestor has `.git`. Marked
     /// `nonisolated` so the per-recompute `ProjectRootCache` can call it from
     /// any actor context.
-    nonisolated fileprivate static func resolveProjectRoot(for path: String) -> String {
+    nonisolated fileprivate static func resolveProjectRootPath(for path: String) -> String {
         var url = URL(fileURLWithPath: path).standardizedFileURL
         let fm = FileManager.default
         while !url.path.isEmpty && url.path != "/" {
@@ -256,6 +256,18 @@ final class GlobalEditCounter: ObservableObject {
             url = parent
         }
         return path
+    }
+
+    /// Stable comparison key for project roots. Claude hooks can report paths
+    /// with different casing than AppKit (`downloads` vs `Downloads`) on the
+    /// user's default case-insensitive APFS volume; comparing normalized keys
+    /// keeps the per-project counter aligned with the global log.
+    nonisolated fileprivate static func projectKey(for path: String) -> String {
+        URL(fileURLWithPath: path)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+            .lowercased()
     }
 
     private func installFileObserver() {
@@ -306,10 +318,11 @@ final class GlobalEditCounter: ObservableObject {
 private final class ProjectRootCache {
     private var cache: [String: String] = [:]
 
-    func root(for path: String) -> String {
+    func key(for path: String) -> String {
         if let cached = cache[path] { return cached }
-        let resolved = GlobalEditCounter.resolveProjectRoot(for: path)
-        cache[path] = resolved
-        return resolved
+        let rootPath = GlobalEditCounter.resolveProjectRootPath(for: path)
+        let key = GlobalEditCounter.projectKey(for: rootPath)
+        cache[path] = key
+        return key
     }
 }

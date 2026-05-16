@@ -88,7 +88,7 @@ class UpdateController {
         // upstream auto-updater always fails with SUNoPublicDSAFoundError. We mark
         // the updater "started" to short-circuit every downstream retry and rely
         // on CustomUpdateChecker for actual update polling against the
-        // vichi7/cmux custom-latest release.
+        // sloppamadewithlove/cmux custom-latest release.
         didStartUpdater = true
         UpdateLogStore.shared.append("updater skipped (custom-visuals fork uses CustomUpdateChecker)")
     }

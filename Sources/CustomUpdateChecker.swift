@@ -3,7 +3,7 @@ import Combine
 import AppKit
 
 /// Custom-visuals fork updater. Replaces Sparkle (which is signature-gated) with a
-/// plain GitHub-API poll against `vichi7/cmux` tag `custom-latest`. When an update
+/// plain GitHub-API poll against `sloppamadewithlove/cmux` tag `custom-latest`. When an update
 /// is available we download `cmux-custom.zip` to `/tmp` and hand off to the
 /// bundled `install-cmux-custom.command` so the user gets the same sha256-verified
 /// install path they run manually today.
@@ -28,7 +28,7 @@ final class CustomUpdateChecker: ObservableObject {
     @Published private(set) var nextCheckAt: Date?
 
     private let checkInterval: TimeInterval = 60 * 60   // every hour
-    private let repo = "vichi7/cmux"
+    private let repo = "sloppamadewithlove/cmux"
     private let tag = "custom-latest"
     private let session: URLSession
     private var timer: Timer?
@@ -145,7 +145,7 @@ final class CustomUpdateChecker: ObservableObject {
     ///   1. App bundle Resources (if CI ever adds it)
     ///   2. The sibling `scripts/install-cmux-custom.command` relative to the
     ///      app's parent path (useful when running from a source checkout).
-    ///   3. Download from raw.githubusercontent.com/vichi7/cmux/custom-visuals.
+    ///   3. Download from raw.githubusercontent.com/sloppamadewithlove/cmux/custom-visuals.
     private func resolveInstallerScript() async throws -> URL {
         if let bundled = Bundle.main.url(forResource: "install-cmux-custom", withExtension: "command"),
            FileManager.default.fileExists(atPath: bundled.path) {

@@ -169,6 +169,8 @@ private final class FloatingTimerPanelController {
             panel.parent?.removeChildWindow(panel)
             parent.addChildWindow(panel, ordered: .above)
         }
+        panel.level = NSWindow.Level(rawValue: parent.level.rawValue + 1)
+        panel.order(.above, relativeTo: parent.windowNumber)
     }
 
     /// On first show, place the panel near the top-left of the parent window so
@@ -270,10 +272,8 @@ private final class FloatingTimerPanel: NSPanel {
 
 // MARK: - Pill content
 
-/// Visual pill rendered inside the floating panel. Same look as the prior
-/// in-window overlay: timer icon + monospaced countdown, ultraThin material,
-/// red-on-expiry. Per-pane red border (`PanelExpiredBorderOverlay`) is still
-/// the canonical expiry signal — this pill is informational.
+/// Visual pill rendered inside the floating panel: timer icon + monospaced
+/// countdown, ultraThin material, red in the final minute and after expiry.
 private struct FloatingTimerPill: View {
     let workspaceId: UUID
     @ObservedObject private var store = PanelActivityStore.shared
@@ -281,7 +281,7 @@ private struct FloatingTimerPill: View {
     var body: some View {
         let _ = store.tick
         let remaining = store.remainingTime(workspaceId: workspaceId)
-        let expired = remaining <= 0
+        let isWarning = remaining <= 60
 
         HStack(spacing: 6) {
             Image(systemName: "timer")
@@ -290,14 +290,14 @@ private struct FloatingTimerPill: View {
                 .font(.system(size: 14, weight: .bold, design: .monospaced))
                 .monospacedDigit()
         }
-        .foregroundStyle(expired ? Color.red : Color.primary)
+        .foregroundStyle(isWarning ? Color.red : Color.primary)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(
             Capsule().stroke(
-                expired ? Color.red.opacity(0.85) : Color.white.opacity(0.18),
-                lineWidth: expired ? 1.2 : 0.5
+                Color.white.opacity(0.18),
+                lineWidth: 0.5
             )
         )
         .shadow(radius: 6, y: 2)

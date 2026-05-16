@@ -331,8 +331,6 @@ struct WorkspaceContentView: View {
                         },
                         onTriggerFlash: { workspace.triggerDebugFlash(panelId: panel.id) }
                     )
-                    // Border drawn around every pane when the workspace timer expires.
-                    WorkspaceExpiredBorderOverlay(workspaceId: workspace.id)
                 }
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
