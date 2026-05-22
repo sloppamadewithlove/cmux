@@ -721,11 +721,16 @@ struct cmuxApp: App {
     }
 
     private static func applyAppearance(_ mode: AppearanceMode) {
-        // custom-visuals: dark-only by design. Ignore the stored appearance mode
-        // and pin the entire app (chrome + terminal) to .darkAqua so upstream
-        // PR #3123's light-mode fallback cannot paint the UI white.
-        _ = mode
-        NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        switch mode {
+        case .system:
+            NSApplication.shared.appearance = nil
+        case .light:
+            NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        case .dark:
+            NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        case .auto:
+            NSApplication.shared.appearance = nil
+        }
     }
 
     private func updateSocketController() {

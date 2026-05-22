@@ -296,42 +296,31 @@ struct WorkspaceContentView: View {
                     ),
                     isManuallyUnread: workspace.manualUnreadPanelIds.contains(panel.id)
                 )
-                ZStack {
-                    // Animated rainbow BACKGROUND for the focused pane. Mounted before
-                    // PanelContentView so it sits beneath the AppKit-portaled Ghostty
-                    // surface; the terminal's `background-opacity` (0.88 by default in
-                    // the user's ~/.config/ghostty/config) lets the rainbow shine
-                    // through the terminal background as a slowly rotating wash, while
-                    // text and cursor stay fully readable above it.
-                    if isFocused {
-                        FocusedPaneRainbow()
-                    }
-                    PanelContentView(
-                        panel: panel,
-                        paneId: paneId,
-                        isFocused: isFocused,
-                        isSelectedInPane: isSelectedInPane,
-                        isVisibleInUI: isVisibleInUI,
-                        portalPriority: workspacePortalPriority,
-                        isSplit: isSplit,
-                        appearance: appearance,
-                        hasUnreadNotification: showsNotificationRing && !usesWorkspacePaneOverlay,
-                        onFocus: {
-                            // Keep bonsplit focus in sync with the AppKit first responder for the
-                            // active workspace. This prevents divergence between the blue focused-tab
-                            // indicator and where keyboard input/flash-focus actually lands.
-                            guard isWorkspaceInputActive else { return }
-                            guard workspace.panels[panel.id] != nil else { return }
-                            workspace.focusPanel(panel.id, trigger: .terminalFirstResponder)
-                        },
-                        onRequestPanelFocus: {
-                            guard isWorkspaceInputActive else { return }
-                            guard workspace.panels[panel.id] != nil else { return }
-                            workspace.focusPanel(panel.id)
-                        },
-                        onTriggerFlash: { workspace.triggerDebugFlash(panelId: panel.id) }
-                    )
-                }
+                PanelContentView(
+                    panel: panel,
+                    paneId: paneId,
+                    isFocused: isFocused,
+                    isSelectedInPane: isSelectedInPane,
+                    isVisibleInUI: isVisibleInUI,
+                    portalPriority: workspacePortalPriority,
+                    isSplit: isSplit,
+                    appearance: appearance,
+                    hasUnreadNotification: showsNotificationRing && !usesWorkspacePaneOverlay,
+                    onFocus: {
+                        // Keep bonsplit focus in sync with the AppKit first responder for the
+                        // active workspace. This prevents divergence between the blue focused-tab
+                        // indicator and where keyboard input/flash-focus actually lands.
+                        guard isWorkspaceInputActive else { return }
+                        guard workspace.panels[panel.id] != nil else { return }
+                        workspace.focusPanel(panel.id, trigger: .terminalFirstResponder)
+                    },
+                    onRequestPanelFocus: {
+                        guard isWorkspaceInputActive else { return }
+                        guard workspace.panels[panel.id] != nil else { return }
+                        workspace.focusPanel(panel.id)
+                    },
+                    onTriggerFlash: { workspace.triggerDebugFlash(panelId: panel.id) }
+                )
                 .onTapGesture {
                     workspace.bonsplitController.focusPane(paneId)
                 }
@@ -394,16 +383,6 @@ struct WorkspaceContentView: View {
                     .ignoresSafeArea(.container, edges: .top)
             } else {
                 bonsplitView
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            // Only the active workspace's overlay should attach the floating
-            // metrics panel. cmux keeps every workspace's view alive in the tree
-            // (see ContentView.swift mountedWorkspaces ForEach), so without
-            // this gate every workspace would race to own the same per-window
-            // panel via FloatingTimerPanelController.
-            if isWorkspaceInputActive {
-                FloatingTimerOverlay(workspaceId: workspace.id)
             }
         }
     }

@@ -904,22 +904,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let telemetryEnabled = TelemetrySettings.enabledForCurrentLaunch
         AppIconLaunchState.markDidFinishLaunching()
 
-        // custom-visuals: force the entire app (chrome, menus, titlebar,
-        // sidebars, panels) into dark appearance regardless of the macOS
-        // system setting. Upstream PR #3123 made cmux follow the OS theme,
-        // which paints everything around the terminal white in light mode.
-        NSApp.appearance = NSAppearance(named: .darkAqua)
-
-        // custom-visuals: bring up the fork-specific services first so the UI
-        // pill has a status to read and the prompt counter starts observing
-        // its log file from the very first frame.
         if !isRunningUnderXCTest {
-            PromptHookInstaller.installIfNeeded()
-            _ = GlobalEditCounter.shared
             CLILauncherShortcuts.shared.focusedTerminalPanelProvider = { [weak self] in
                 self?.tabManager?.selectedWorkspace?.focusedTerminalPanel
             }
-            CLILauncherShortcuts.shared.installIfNeeded()
         }
 
         claimAuthCallbackURLSchemes()
@@ -9594,6 +9582,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             cmuxDebugLog("handleCustomShortcut: unresolved event window context; bypassing app shortcut handling")
 #endif
             return false
+        }
+
+        if CLILauncherShortcuts.shared.handleShortcutEvent(event) {
+            return true
         }
 
         // Keep keyboard routing deterministic after split close/reparent transitions:

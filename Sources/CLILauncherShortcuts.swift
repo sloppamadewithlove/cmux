@@ -1,9 +1,7 @@
 import AppKit
 
-/// Custom-visuals fork: dedicated keybindings that type a CLI launch command into
-/// the currently focused terminal pane and press Enter. Kept isolated from
-/// `KeyboardShortcutSettings` so it never touches the typing-latency-sensitive
-/// shortcut pipeline.
+/// Dedicated keybindings that type a CLI launch command into the currently
+/// focused terminal pane and press Enter.
 ///
 /// To change a chord or its command, edit `defaultBindings` below and push.
 /// The chord check is O(bindings.count) per keypress and short-circuits before
@@ -13,7 +11,7 @@ final class CLILauncherShortcuts {
     static let shared = CLILauncherShortcuts()
 
     struct Binding {
-        /// `event.charactersIgnoringModifiers`, lowercased.
+        /// Normalized event character, lowercased.
         let key: String
         /// Device-independent modifier mask the event must equal exactly.
         let modifiers: NSEvent.ModifierFlags
@@ -66,30 +64,30 @@ final class CLILauncherShortcuts {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
-            return self.handle(event: event)
+            return self.handleShortcutEvent(event) ? nil : event
         }
     }
 
-    private func handle(event: NSEvent) -> NSEvent? {
-        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+    func handleShortcutEvent(_ event: NSEvent) -> Bool {
+        let mods = event.modifierFlags
+            .intersection(.deviceIndependentFlagsMask)
+            .subtracting([.numericPad, .function, .capsLock])
         // Cheap reject: every binding here uses Cmd+Ctrl+Opt. If none of those are
         // held, return immediately without touching `charactersIgnoringModifiers`.
         let triple: NSEvent.ModifierFlags = [.command, .control, .option]
-        guard mods.contains(triple) else { return event }
+        guard mods.contains(triple) else { return false }
 
-        guard let chars = event.charactersIgnoringModifiers?.lowercased(),
-              !chars.isEmpty else {
-            return event
-        }
+        let chars = KeyboardLayout.normalizedCharacters(for: event).lowercased()
+        guard !chars.isEmpty else { return false }
 
         for binding in bindings where mods == binding.modifiers && chars == binding.key {
             guard let panel = focusedTerminalPanelProvider?() else {
                 NSSound.beep()
-                return nil
+                return true
             }
             panel.sendText(binding.command + "\n")
-            return nil
+            return true
         }
-        return event
+        return false
     }
 }
