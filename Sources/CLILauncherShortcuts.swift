@@ -1,8 +1,7 @@
 import AppKit
 
 /// Custom-visuals fork: dedicated keybindings that type a CLI launch command into
-/// the currently focused terminal pane and press Enter. Inspired by MoonDev's
-/// "press one key to spawn Claude Code" workflow, but kept isolated from
+/// the currently focused terminal pane and press Enter. Kept isolated from
 /// `KeyboardShortcutSettings` so it never touches the typing-latency-sensitive
 /// shortcut pipeline.
 ///
@@ -32,19 +31,25 @@ final class CLILauncherShortcuts {
             key: "c",
             modifiers: [.command, .control, .option],
             command: "claude --dangerously-skip-permissions",
-            label: "claude:dangerous"
+            label: "claude"
         ),
         Binding(
             key: "x",
             modifiers: [.command, .control, .option],
             command: "codex --dangerously-bypass-approvals-and-sandbox",
-            label: "codex:yolo"
+            label: "codex"
         ),
         Binding(
             key: "g",
             modifiers: [.command, .control, .option],
             command: "gemini --yolo",
-            label: "gemini:yolo"
+            label: "gemini"
+        ),
+        Binding(
+            key: "s",
+            modifiers: [.command, .control, .option],
+            command: "superGemma",
+            label: "superGemma"
         ),
     ]
 

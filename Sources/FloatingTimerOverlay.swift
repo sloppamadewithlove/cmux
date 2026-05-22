@@ -4,7 +4,7 @@ import SwiftUI
 
 /// Public entry point for the draggable workspace metrics pill.
 ///
-/// Earlier revisions of the timer were a SwiftUI `.overlay` mounted inside
+/// Earlier revisions of the metrics pill were a SwiftUI `.overlay` mounted inside
 /// `WorkspaceContentView`. That works visually for the top-center pill because
 /// the title-bar strip has no AppKit portal, but the timer's draggable position
 /// often lands inside the bonsplit pane area where the portaled Ghostty surface
@@ -266,36 +266,26 @@ private final class FloatingTimerPanel: NSPanel {
 
 // MARK: - Pill content
 
-/// Visual pill rendered inside the floating panel: idle timer, today's prompt
-/// edits, and all-time prompt edits. No project/folder context is shown here.
+/// Visual pill rendered inside the floating panel: today's prompt edits and
+/// all-time prompt edits. No timer and no project/folder context are shown here.
 private struct FloatingTimerPill: View {
     let workspaceId: UUID
-    @ObservedObject private var store = PanelActivityStore.shared
     @ObservedObject private var counter = GlobalEditCounter.shared
 
     var body: some View {
-        let _ = store.tick
-        let remaining = store.remainingTime(workspaceId: workspaceId)
-        let isExpired = remaining <= 0
-
-        HStack(spacing: 10) {
-            metric(label: "Timer", value: formatted(remaining), isExpired: isExpired)
+        HStack(spacing: 12) {
+            metric(label: "Today", value: "\(counter.today)")
 
             Divider()
                 .frame(height: 16)
 
-            metric(label: "Day", value: "\(counter.today)")
-
-            Divider()
-                .frame(height: 16)
-
-            metric(label: "Ever", value: "\(counter.lifetime)")
+            metric(label: "Global", value: "\(counter.lifetime)")
         }
-        .foregroundStyle(isExpired ? Color.white : Color.primary)
+        .foregroundStyle(Color.primary)
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .background(
-            Capsule().fill(isExpired ? AnyShapeStyle(Color.red) : AnyShapeStyle(.ultraThinMaterial))
+            Capsule().fill(AnyShapeStyle(.ultraThinMaterial))
         )
         .overlay(
             Capsule().stroke(
@@ -306,32 +296,25 @@ private struct FloatingTimerPill: View {
         .shadow(radius: 6, y: 2)
         // Outer breathing room so the shadow isn't clipped by panel bounds.
         .padding(6)
-        .help(Text(verbatim: "Drag to reposition. Timer resets when a prompt completes. Day and Ever count prompt edits."))
+        .help(Text(verbatim: "Drag to reposition. Today and Global count prompt edits."))
         .accessibilityLabel(Text(verbatim: "Workspace metrics"))
-        .accessibilityValue(Text(verbatim: "\(formatted(remaining)), \(counter.today) today, \(counter.lifetime) ever"))
+        .accessibilityValue(Text(verbatim: "\(counter.today) today, \(counter.lifetime) global"))
         .animation(.spring(duration: 0.3), value: counter.today)
         .animation(.spring(duration: 0.3), value: counter.lifetime)
     }
 
     @ViewBuilder
-    private func metric(label: String, value: String, isExpired: Bool = false) -> some View {
+    private func metric(label: String, value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 4) {
             Text(verbatim: label)
                 .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(isExpired ? Color.white.opacity(0.75) : Color.secondary)
+                .foregroundStyle(Color.secondary)
             Text(verbatim: value)
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(isExpired ? Color.white : Color.primary)
+                .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
         }
-    }
-
-    private func formatted(_ seconds: TimeInterval) -> String {
-        let total = Int(seconds.rounded(.down))
-        let m = total / 60
-        let s = total % 60
-        return String(format: "%d:%02d", m, s)
     }
 }

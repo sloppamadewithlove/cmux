@@ -11,7 +11,7 @@
 #   3. Unzip into a temp directory.
 #   4. Strip quarantine and re-sign ad-hoc (survives curl/ditto round-trip).
 #   5. Quit any running Cmux.
-#   6. Replace /Applications/Cmux.app atomically.
+#   6. Replace /Applications/Cmux.app.
 #   7. Launch the new build.
 
 set -euo pipefail
@@ -92,13 +92,12 @@ done
 pkill -f "Cmux.app/Contents/MacOS/cmux" 2>/dev/null || true
 sleep 0.5
 
-# 6. Replace /Applications/Cmux.app atomically via backup + move.
+# 6. Replace /Applications/Cmux.app in place. This personal installer keeps only
+#    the single Cmux app the user actually runs; it does not create backup apps.
 #    /Applications is group-writable by admin users, so no sudo needed here.
 blue "==> Installing to $DEST"
 if [ -e "$DEST" ]; then
-  BACKUP="$DEST.backup-$(date +%Y%m%d-%H%M%S)"
-  mv "$DEST" "$BACKUP"
-  yellow "    previous Cmux moved to $BACKUP"
+  rm -rf "$DEST"
 fi
 ditto "$NEW_APP" "$DEST"
 xattr -cr "$DEST"
@@ -120,8 +119,3 @@ fi
 blue "==> Launching"
 open "$DEST"
 green "==> Done. Custom Cmux is now your /Applications/Cmux.app."
-
-echo ""
-echo "Tip: old backups accumulate in /Applications as Cmux.app.backup-<ts>."
-echo "     Remove them when you trust the new build:"
-echo "       sudo rm -rf /Applications/Cmux.app.backup-*"
